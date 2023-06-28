@@ -49,7 +49,7 @@ class ESOClient:
         self.form_parser.feed(response.text)
 
     def fetch(self, obj: str, date: datetime) -> dict:
-        if len(self.cookies) == 0:
+        if not self.cookies:
             raise Exception("Cookies are empty. Check your credentials.")
 
         if self.form_parser.get("form_id") != "eso_consumption_history_form":
