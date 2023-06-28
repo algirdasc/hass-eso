@@ -1,0 +1,7 @@
+{
+  "name": "ESO Energy Consumption Integration",
+  "content_in_root": false,
+  "domains": [],
+  "homeassistant": "2023.6.2",
+  "render_readme": true
+}

@@ -1,0 +1,10 @@
+{
+  "domain": "eso",
+  "name": "ESO Energy Consumption",
+  "documentation": "https://github.com/algirdasc/hass-eso",
+  "dependencies": [],
+  "codeowners": ["@algirdasc"],
+  "issue_tracker": "https://github.com/algirdasc/hass-eso/issues",
+  "requirements": ["requests"],
+  "version": "1.0.0"
+}
