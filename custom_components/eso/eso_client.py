@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
@@ -59,23 +59,27 @@ class ESOClient:
             "X-Requested-With": "XMLHttpRequest",
         }
 
-        response = self.session.post(
-            GENERATION_URL,
-            data={
-                "objects": [obj],
+        data = {
+                "objects[]": obj,
+                "objects_mock": "",
                 "display_type": "hourly",
                 "period": "week",
-                "day_period": date.strftime("%Y-%m-%d"),
                 "energy_type": "general",
                 "scales": "total",
+                "active_date_value": date.strftime("%Y-%m-%d 00:00"),
+                "made_energy_status": 1,
                 "visible_scales_field": 0,
                 "visible_last_year_comparison_field": 0,
                 "form_build_id": self.form_parser.get("form_build_id"),
                 "form_token": self.form_parser.get("form_token"),
                 "form_id": self.form_parser.get("form_id"),
                 "_drupal_ajax": "1",
-                "_triggering_element_name": "period",
-            },
+                "_triggering_element_name": "display_type",
+            }
+
+        response = self.session.post(
+            GENERATION_URL,
+            data=data,
             headers=headers,
             cookies=self.cookies,
             allow_redirects=False
@@ -96,6 +100,10 @@ class ESOClient:
         data = self.fetch(obj, date)
 
         for d in data:
+            if d["command"] == "update_build_id":
+                self.form_parser.set("form_build_id", d["new"])
+                continue
+
             if d["command"] != "settings":
                 continue
 

@@ -16,6 +16,9 @@ class FormParser(HTMLParser):
 
         return self.form[attribute]
 
+    def set(self, attribute: str, value: str) -> None:
+        self.form[attribute] = value
+
     def handle_input_tag(self, attrs: tuple) -> None:
         attributes = dict(attrs)
 

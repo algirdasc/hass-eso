@@ -7,7 +7,10 @@ as well as improve motivation and helps me understand, that this project is usef
 
 # Intro
 This integration is for users which have smart [ESO](https://mano.eso.lt/) energy meters and does not have
-technical possibilities to add P1 interface (for example meter is far away from wireless reception). Keep in mind, that ESO site provides data for last 24 hours, therefore refresh rate is quite slow. If you wish for real-time statistics - consider using 3rd party meters (like Shelly 3EM) or utilise P1 interface of smart meter.
+technical possibilities to add P1 interface (for example meter is far away from wireless reception). 
+Keep in mind, that ESO site provides data for last 24 hours, 
+therefore refresh rate is quite slow (check for new data is performed every 2 hours). 
+If you wish for real-time statistics - consider using 3rd party meters (like Shelly 3EM) or utilise P1 interface of smart meter.
 
 ### Disclaimer
 
