@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import requests
 
@@ -44,15 +44,17 @@ class ESOClient:
 
         response.raise_for_status()
 
-        if len(response.cookies) == 0:
-            _LOGGER.error("Failed to get cookies after login. Possible invalid credentials")
-            return
-
         self.cookies = requests.utils.dict_from_cookiejar(response.cookies)
 
         self.form_parser.feed(response.text)
 
     def fetch(self, obj: str, date: datetime) -> dict:
+        if len(self.cookies) == 0:
+            raise Exception("Cookies are empty. Check your credentials.")
+
+        if self.form_parser.get("form_id") != "eso_consumption_history_form":
+            raise Exception("Form ID not found. Check your credentials.")
+
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
