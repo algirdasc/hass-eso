@@ -79,7 +79,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             return
 
         _LOGGER.debug(f"Logging in to {DOMAIN} site")
-        # await hass.async_add_executor_job(client.login)
+        await hass.async_add_executor_job(client.login)
 
         for obj in config[DOMAIN][CONF_OBJECTS]:
             _LOGGER.debug(f"Fetching consumption data for {obj[CONF_NAME]}")
