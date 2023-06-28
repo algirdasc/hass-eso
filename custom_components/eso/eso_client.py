@@ -6,8 +6,7 @@ import requests
 from .form_parser import FormParser
 
 LOGIN_URL = "https://mano.eso.lt/?destination=/consumption"
-#GENERATION_URL = "https://mano.eso.lt/consumption?ajax_form=1&_wrapper_format=drupal_ajax"
-GENERATION_URL = "http://test.esprimo.lan/test/"
+GENERATION_URL = "https://mano.eso.lt/consumption?ajax_form=1&_wrapper_format=drupal_ajax"
 
 MONTHS = [
     "Sausio", "Vasario", "Kovo",
