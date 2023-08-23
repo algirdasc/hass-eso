@@ -1,4 +1,7 @@
+import logging
 from html.parser import HTMLParser
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FormParser(HTMLParser):
@@ -23,4 +26,5 @@ class FormParser(HTMLParser):
         attributes = dict(attrs)
 
         if "name" in attributes and attributes["name"] in ["form_token", "form_build_id", "form_id"]:
+            _LOGGER.debug(f"Found required form attribute: {attributes['name']} = {attributes['value']}")
             self.form[attributes["name"]] = attributes["value"]
