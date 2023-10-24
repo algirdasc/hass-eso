@@ -82,21 +82,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await hass.async_add_executor_job(client.login)
 
         for obj in config[DOMAIN][CONF_OBJECTS]:
-            _LOGGER.debug(f"Fetching consumption data for {obj[CONF_NAME]}")
+            _LOGGER.debug(f"Fetching {DOMAIN} data for {obj[CONF_NAME]}")
             await hass.async_add_executor_job(
-                client.fetch_consumption_data,
+                client.fetch_dataset,
                 obj[CONF_ID],
                 now
             )
 
-            _LOGGER.debug(f"Importing generation data for {obj[CONF_NAME]}")
+            _LOGGER.debug(f"Importing {DOMAIN} data for {obj[CONF_NAME]}")
             await async_insert_statistics(
                 hass,
                 obj,
-                client.get_consumption_data(obj[CONF_ID])
+                client.get_dataset(obj[CONF_ID])
             )
 
-        _LOGGER.debug(f"Imported consumption data")
+        _LOGGER.debug(f"Imported {DOMAIN} data")
 
     async def async_first_start(event: Event) -> None:
         await async_import_generation(datetime.now())
@@ -111,30 +111,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_insert_statistics(
         hass: HomeAssistant,
         obj: dict,
-        generation_data: dict
+        dataset: dict
 ) -> None:
-    for consumption_type in [CONF_CONSUMED, CONF_RETURNED]:
-        if obj[consumption_type] is False:
+    for data_type in [CONF_CONSUMED, CONF_RETURNED]:
+        if obj[data_type] is False:
             continue
 
-        statistic_id = f"{DOMAIN}:energy_{consumption_type}_{obj[CONF_ID]}"
+        statistic_id = f"{DOMAIN}:energy_{data_type}_{obj[CONF_ID]}"
 
         _LOGGER.debug(f"Statistic ID for {obj[CONF_NAME]} is {statistic_id}")
 
-        mapped_consumption_type = ENERGY_TYPE_MAP[consumption_type]
+        mapped_consumption_type = ENERGY_TYPE_MAP[data_type]
 
-        if not generation_data or mapped_consumption_type not in generation_data:
+        if not dataset or mapped_consumption_type not in dataset:
             _LOGGER.error(f"Received empty generation data for {statistic_id}")
             return None
 
-        generation_data = generation_data[mapped_consumption_type]
+        generation_data = dataset[mapped_consumption_type]
 
-        _LOGGER.debug(f"Received generation data for {statistic_id}: {generation_data}")
+        _LOGGER.debug(f"Received {DOMAIN} data for {statistic_id}: {generation_data}")
 
         metadata = StatisticMetaData(
             has_mean=False,
             has_sum=True,
-            name=f"{obj[CONF_NAME]} ({consumption_type})",
+            name=f"{obj[CONF_NAME]} ({data_type})",
             source=DOMAIN,
             statistic_id=statistic_id,
             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,

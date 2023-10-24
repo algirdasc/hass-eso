@@ -26,10 +26,10 @@ class ESOClient:
         self.session: requests.Session = requests.Session()
         self.cookies: dict | None = None
         self.form_parser: FormParser = FormParser()
-        self.consumption: dict = {}
+        self.dataset: dict = {}
 
     def login(self) -> None:
-        self.consumption = {}
+        self.dataset = {}
 
         response = self.session.post(
             LOGIN_URL,
@@ -95,11 +95,11 @@ class ESOClient:
 
         return response.json()
 
-    def fetch_consumption_data(self, obj: str, date: datetime) -> None:
-        if obj in self.consumption:
+    def fetch_dataset(self, obj: str, date: datetime) -> None:
+        if obj in self.dataset:
             return
 
-        self.consumption[obj] = {}
+        self.dataset[obj] = {}
 
         data = self.fetch(obj, date)
 
@@ -118,15 +118,15 @@ class ESOClient:
 
             for dataset in datasets:
                 consumption_type = dataset["key"]
-                if consumption_type not in self.consumption[obj]:
-                    self.consumption[obj][consumption_type] = {}
-                self.consumption[obj][consumption_type] = self.parse_dataset(dataset)
+                if consumption_type not in self.dataset[obj]:
+                    self.dataset[obj][consumption_type] = {}
+                self.dataset[obj][consumption_type] = self.parse_dataset(dataset)
 
-    def get_consumption_data(self, obj: str) -> dict | None:
-        if obj not in self.consumption:
+    def get_dataset(self, obj: str) -> dict | None:
+        if obj not in self.dataset:
             return None
 
-        return self.consumption[obj]
+        return self.dataset[obj]
 
     @staticmethod
     def parse_dataset(dataset: dict) -> dict:
