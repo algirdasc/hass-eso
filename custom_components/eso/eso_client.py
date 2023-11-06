@@ -134,6 +134,6 @@ class ESOClient:
 
         for record in dataset["record"]:
             ts = int(datetime.timestamp(datetime.strptime(record["date"], "%Y%m%d%H%M%S")))
-            result[ts] = float(record["value"]) if record["value"] is not None else 0.0
+            result[ts] = abs(float(record["value"])) if record["value"] is not None else 0.0
 
         return result
