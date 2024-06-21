@@ -30,6 +30,9 @@ DOMAIN = "eso"
 CONF_OBJECTS = "objects"
 CONF_CONSUMED = "consumed"
 CONF_RETURNED = "returned"
+CONF_COST = "cost"
+CONF_PRICE_ENTITY = "price_entity"
+CONF_PRICE_CURRENCY = "price_currency"
 
 POWER_CONSUMED = "P+"
 POWER_RETURNED = "P-"
@@ -45,6 +48,8 @@ OBJECT_SCHEMA = vol.Schema(
         vol.Required(CONF_ID): cv.string,
         vol.Required(CONF_CONSUMED, default=True): cv.boolean,
         vol.Required(CONF_RETURNED, default=False): cv.boolean,
+        vol.Optional(CONF_PRICE_ENTITY): cv.string,
+        vol.Required(CONF_PRICE_CURRENCY, default="EUR"): cv.string,
     }
 )
 
@@ -90,11 +95,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
 
             _LOGGER.debug(f"Importing {DOMAIN} data for {obj[CONF_NAME]}")
-            await async_insert_statistics(
-                hass,
-                obj,
-                client.get_dataset(obj[CONF_ID])
-            )
+            await async_insert_statistics(hass, obj, client.get_dataset(obj[CONF_ID]))
+
+            if obj[CONF_PRICE_ENTITY]:
+                await async_insert_cost_statistics(
+                    hass, obj, client.get_dataset(obj[CONF_ID])
+                )
 
         _LOGGER.debug(f"Imported {DOMAIN} data")
 
@@ -158,7 +164,7 @@ async def _async_get_statistics(
     sum_ = None
 
     for ts, kwh in generation_data.items():
-        dt_object = datetime.fromtimestamp(ts)
+        dt_object = dt_util.utc_from_timestamp(ts)
 
         if sum_ is None:
             sum_ = await get_yesterday_sum(hass, metadata, dt_object)
@@ -167,7 +173,7 @@ async def _async_get_statistics(
 
         statistics.append(
             StatisticData(
-                start=dt_object.replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius")),
+                start=dt_object,
                 state=kwh,
                 sum=sum_
             )
@@ -203,3 +209,101 @@ async def get_yesterday_sum(hass: HomeAssistant, metadata: StatisticMetaData, da
     _LOGGER.debug(f"History sum for {statistic_id} = {sum_}")
 
     return sum_
+
+
+async def async_insert_cost_statistics(
+    hass: HomeAssistant,
+    obj: dict,
+    consumption_dataset: dict
+) -> None:
+    if obj[CONF_CONSUMED] is False:
+        return
+
+    cons_dataset = consumption_dataset[ENERGY_TYPE_MAP[CONF_CONSUMED]]
+    start_time = dt_util.utc_from_timestamp(min(cons_dataset.keys()))
+    end_time = dt_util.utc_from_timestamp(max(cons_dataset.keys()))
+
+    prices = await _async_generate_price_dict(hass, obj, start_time, end_time)
+
+    if prices is None:
+        return
+
+    cost_metadata = StatisticMetaData(
+        has_mean=False,
+        has_sum=True,
+        name=f"{obj[CONF_NAME]} ({CONF_COST})",
+        source=DOMAIN,
+        statistic_id=f"{DOMAIN}:energy_{CONF_COST}_{obj[CONF_ID]}",
+        unit_of_measurement=obj[CONF_PRICE_CURRENCY],
+    )
+
+    cost_stats: list[StatisticData] = []
+    cost_sum_ = None
+
+    for ts, cons_kwh in cons_dataset.items():
+        # Decided to support zero price and therefore produce 0 cost
+        price = prices.get(ts, 0)
+
+        # Ignitis rounds hourly costs to 5 decimal places
+        cost = round(cons_kwh * price, 5)
+
+        if cost_sum_ is None:
+            cost_sum_ = await get_yesterday_sum(hass, cost_metadata, start_time)
+
+        cost_sum_ += cost
+
+        cost_stats.append(
+            StatisticData(
+                start=dt_util.utc_from_timestamp(ts),
+                state=cost,
+                sum=cost_sum_,
+            )
+        )
+
+    _LOGGER.debug(
+        f"Generated cost statistics for {DOMAIN}:energy_{CONF_COST}_{obj[CONF_ID]}: {cost_stats}"
+    )
+    async_add_external_statistics(hass, cost_metadata, cost_stats)
+
+
+async def _async_generate_price_dict(
+    hass: HomeAssistant,
+    obj: dict,
+    time_from: datetime,
+    time_to: datetime
+) -> dict:
+    stats = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        time_from,
+        time_to,
+        {obj[CONF_PRICE_ENTITY]},
+        "hour",
+        None,
+        {"state"},
+    )
+
+    price_stats = stats.get(obj[CONF_PRICE_ENTITY])
+
+    if price_stats is None:
+        _LOGGER.warning(
+            "No price statistics for %s between %s and %s",
+            obj[CONF_PRICE_ENTITY],
+            time_from.isoformat(),
+            time_to.isoformat(),
+        )
+        return None
+
+    _LOGGER.debug(
+        "Retrieving price statistics for %s between %s and %s: %s",
+        obj[CONF_PRICE_ENTITY],
+        time_from,
+        time_to,
+        price_stats,
+    )
+
+    prices = {}
+    for rec in price_stats:
+        prices[rec["start"]] = rec["state"]
+
+    return prices
