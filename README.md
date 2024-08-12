@@ -54,7 +54,7 @@ If you wish for real-time statistics - consider using 3rd party meters (like She
 | price_entity | string  |    no    |         | Name of an entity tracking electricity price         |
 
 
-### Example:
+### Example
 ```yaml
 eso:
   username: your_username
@@ -75,7 +75,7 @@ eso:
 4. Look at address bar of your browser
 5. `https://mano.eso.lt/objects/123456789` - 123456798 is your object ID
 
-### Example with cost tracking
+### Example with cost calculation
 
 The example below is using the [Nord Pool integration for Home Assistant](https://github.com/custom-components/nordpool).
 It creates an entity tracking spot market (hourly) electricity price. The `additional_costs` parameter is
