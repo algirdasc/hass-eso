@@ -45,12 +45,13 @@ If you wish for real-time statistics - consider using 3rd party meters (like She
 
 ### Object
 
-| Name     |  Type   | Required | Default | Description                                          |
-|----------|:-------:|:--------:|:-------:|------------------------------------------------------|
-| name     | string  |   yes    |         | Name of object (will be visible in energy dashboard) |
-| id       | string  |   yes    |         | Object ID (see below *How to get your object ID*)    |
-| consumed | boolean |    no    |  True   | Generate statistics for consumed energy              |
-| returned | boolean |    no    |  False  | Generate statistics for returned energy              |
+| Name         |  Type   | Required | Default | Description                                          |
+|--------------|:-------:|:--------:|:-------:|------------------------------------------------------|
+| name         | string  |   yes    |         | Name of object (will be visible in energy dashboard) |
+| id           | string  |   yes    |         | Object ID (see below *How to get your object ID*)    |
+| consumed     | boolean |    no    |  True   | Generate statistics for consumed energy              |
+| returned     | boolean |    no    |  False  | Generate statistics for returned energy              |
+| price_entity | string  |    no    |         | Name of an entity tracking electricity price         |
 
 
 ### Example:
@@ -73,6 +74,40 @@ eso:
 3. Click on desired object
 4. Look at address bar of your browser
 5. `https://mano.eso.lt/objects/123456789` - 123456798 is your object ID
+
+### Example with cost tracking
+
+The example below is using the [Nord Pool integration for Home Assistant](https://github.com/custom-components/nordpool).
+It creates an entity tracking spot market (hourly) electricity price. The `additional_costs` parameter is
+used to add any cost margins which depend on a particular energy contract.
+
+```yaml
+sensor:
+  - platform: nordpool
+    region: "LT"
+    currency: "EUR"
+    VAT: true
+    precision: 5
+    low_price_cutoff: 0.95
+    price_in_cents: false
+    price_type: kWh
+    additional_costs: "{{ 0.08470 + 0.007 | float }}" # 0.08470 ESO, 0.007 ENEFIT
+
+eso:
+  username: your_username
+  password: your_password
+  objects:
+    - name: My House
+      id: 123456
+      price_entity: sensor.nordpool_kwh_eur_ext
+```
+
+The `price_entity` parameter of the ESO object (above) is pointed to the Nord Pool price entity. This triggers creation
+of an additional HA entity tracking energy costs.
+
+To display the Cost information in the HA Energy dashboard, in the Energy configuration popup click the `Use an entity tracking
+the total costs` option and select the entity called `My House (cost)`.
+
 
 # TODO
 
