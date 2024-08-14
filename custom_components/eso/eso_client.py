@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -130,10 +131,15 @@ class ESOClient:
 
     @staticmethod
     def parse_dataset(dataset: dict) -> dict:
+        zoneinfo_vln = ZoneInfo("Europe/Vilnius")
         result = {}
 
         for record in dataset["record"]:
-            ts = int(datetime.timestamp(datetime.strptime(record["date"], "%Y%m%d%H%M%S")))
+            dt = datetime.strptime(record["date"], "%Y%m%d%H%M")
+            dt = dt.replace(tzinfo=zoneinfo_vln)
+            # ESO date indicates hourly period end, HA needs period start
+            dt = dt - timedelta(hours=1)
+            ts = dt.timestamp()
             result[ts] = abs(float(record["value"])) if record["value"] is not None else 0.0
 
         return result
