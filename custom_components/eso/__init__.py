@@ -167,7 +167,7 @@ async def _async_get_statistics(
         dt_object = dt_util.utc_from_timestamp(ts)
 
         if sum_ is None:
-            sum_ = await get_yesterday_sum(hass, metadata, dt_object)
+            sum_ = await get_previous_sum(hass, metadata, dt_object)
 
         sum_ += kwh
 
@@ -182,10 +182,10 @@ async def _async_get_statistics(
     return statistics
 
 
-async def get_yesterday_sum(hass: HomeAssistant, metadata: StatisticMetaData, date: datetime) -> float:
+async def get_previous_sum(hass: HomeAssistant, metadata: StatisticMetaData, date: datetime) -> float:
     statistic_id = metadata["statistic_id"]
-    start = date - timedelta(days=1)
-    end = date - timedelta(minutes=1)
+    start = date - timedelta(hours=1)
+    end = date
 
     _LOGGER.debug(f"Looking history sum for {statistic_id} for {date} between {start} and {end}")
 
@@ -195,7 +195,7 @@ async def get_yesterday_sum(hass: HomeAssistant, metadata: StatisticMetaData, da
         start,
         end,
         {statistic_id},
-        "day",
+        "hour",
         None,
         {"sum"},
     )
@@ -248,7 +248,7 @@ async def async_insert_cost_statistics(
         cost = round(cons_kwh * price, 5)
 
         if cost_sum_ is None:
-            cost_sum_ = await get_yesterday_sum(hass, cost_metadata, start_time)
+            cost_sum_ = await get_previous_sum(hass, cost_metadata, start_time)
 
         cost_sum_ += cost
 
