@@ -45,14 +45,14 @@ If you wish for real-time statistics - consider using 3rd party meters (like She
 
 ### Object
 
-| Name         |  Type   | Required | Default | Description                                          |
-|--------------|:-------:|:--------:|:-------:|------------------------------------------------------|
-| name         | string  |   yes    |         | Name of object (will be visible in energy dashboard) |
-| id           | string  |   yes    |         | Object ID (see below *How to get your object ID*)    |
-| consumed     | boolean |    no    |  True   | Generate statistics for consumed energy              |
-| returned     | boolean |    no    |  False  | Generate statistics for returned energy              |
-| price_entity | string  |    no    |         | Name of an entity tracking electricity price         |
-
+| Name           |  Type   | Required | Default | Description                                          |
+|----------------|:-------:|:--------:|:-------:|------------------------------------------------------|
+| name           | string  |   yes    |         | Name of object (will be visible in energy dashboard) |
+| id             | string  |   yes    |         | Object ID (see below *How to get your object ID*)    |
+| consumed       | boolean |    no    |  True   | Generate statistics for consumed energy              |
+| returned       | boolean |    no    |  False  | Generate statistics for returned energy              |
+| price_entity   | string  |    no    |         | Name of an entity tracking electricity price         |
+| price_currency | string  |    no    |   EUR   | Currency of electricity price                        |
 
 ### Example
 ```yaml

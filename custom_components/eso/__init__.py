@@ -49,7 +49,7 @@ OBJECT_SCHEMA = vol.Schema(
         vol.Required(CONF_CONSUMED, default=True): cv.boolean,
         vol.Required(CONF_RETURNED, default=False): cv.boolean,
         vol.Optional(CONF_PRICE_ENTITY): cv.string,
-        vol.Required(CONF_PRICE_CURRENCY, default="EUR"): cv.string,
+        vol.Optional(CONF_PRICE_CURRENCY, default="EUR"): cv.string,
     }
 )
 
@@ -97,7 +97,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             _LOGGER.debug(f"Importing {DOMAIN} data for {obj[CONF_NAME]}")
             await async_insert_statistics(hass, obj, client.get_dataset(obj[CONF_ID]))
 
-            if obj[CONF_PRICE_ENTITY]:
+            if CONF_PRICE_ENTITY in obj and obj[CONF_PRICE_ENTITY]:
                 await async_insert_cost_statistics(
                     hass, obj, client.get_dataset(obj[CONF_ID])
                 )
