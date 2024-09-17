@@ -164,7 +164,7 @@ async def _async_get_statistics(
     sum_ = None
 
     for ts, kwh in generation_data.items():
-        dt_object = dt_util.utc_from_timestamp(ts)
+        dt_object = datetime.fromtimestamp(ts).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
 
         if sum_ is None:
             sum_ = await get_previous_sum(hass, metadata, dt_object)
@@ -212,16 +212,16 @@ async def get_previous_sum(hass: HomeAssistant, metadata: StatisticMetaData, dat
 
 
 async def async_insert_cost_statistics(
-    hass: HomeAssistant,
-    obj: dict,
-    consumption_dataset: dict
+        hass: HomeAssistant,
+        obj: dict,
+        consumption_dataset: dict
 ) -> None:
     if obj[CONF_CONSUMED] is False:
         return
 
     cons_dataset = consumption_dataset[ENERGY_TYPE_MAP[CONF_CONSUMED]]
-    start_time = dt_util.utc_from_timestamp(min(cons_dataset.keys()))
-    end_time = dt_util.utc_from_timestamp(max(cons_dataset.keys()))
+    start_time = dt_util.fromtimestamp(min(cons_dataset.keys())).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
+    end_time = dt_util.fromtimestamp(max(cons_dataset.keys())).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
 
     prices = await _async_generate_price_dict(hass, obj, start_time, end_time)
 
@@ -241,6 +241,8 @@ async def async_insert_cost_statistics(
     cost_sum_ = None
 
     for ts, cons_kwh in cons_dataset.items():
+        dt_object = datetime.fromtimestamp(ts).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
+
         # Decided to support zero price and therefore produce 0 cost
         price = prices.get(ts, 0)
 
@@ -254,7 +256,7 @@ async def async_insert_cost_statistics(
 
         cost_stats.append(
             StatisticData(
-                start=dt_util.utc_from_timestamp(ts),
+                start=dt_object,
                 state=cost,
                 sum=cost_sum_,
             )
@@ -267,10 +269,10 @@ async def async_insert_cost_statistics(
 
 
 async def _async_generate_price_dict(
-    hass: HomeAssistant,
-    obj: dict,
-    time_from: datetime,
-    time_to: datetime
+        hass: HomeAssistant,
+        obj: dict,
+        time_from: datetime,
+        time_to: datetime
 ) -> dict:
     stats = await get_instance(hass).async_add_executor_job(
         statistics_during_period,
@@ -292,7 +294,8 @@ async def _async_generate_price_dict(
             time_from.isoformat(),
             time_to.isoformat(),
         )
-        return None
+
+        return {}
 
     _LOGGER.debug(
         "Retrieving price statistics for %s between %s and %s: %s",
