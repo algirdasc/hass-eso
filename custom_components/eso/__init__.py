@@ -98,9 +98,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             await async_insert_statistics(hass, obj, client.get_dataset(obj[CONF_ID]))
 
             if CONF_PRICE_ENTITY in obj and obj[CONF_PRICE_ENTITY]:
-                await async_insert_cost_statistics(
-                    hass, obj, client.get_dataset(obj[CONF_ID])
-                )
+                await async_insert_cost_statistics(hass, obj, client.get_dataset(obj[CONF_ID]))
 
         _LOGGER.debug(f"Imported {DOMAIN} data")
 
@@ -164,6 +162,7 @@ async def _async_get_statistics(
     sum_ = None
 
     for ts, kwh in generation_data.items():
+        # convert from naive timestamp to tz aware timestamp
         dt_object = datetime.fromtimestamp(ts).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
 
         if sum_ is None:
@@ -220,8 +219,10 @@ async def async_insert_cost_statistics(
         return
 
     cons_dataset = consumption_dataset[ENERGY_TYPE_MAP[CONF_CONSUMED]]
-    start_time = dt_util.fromtimestamp(min(cons_dataset.keys())).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
-    end_time = dt_util.fromtimestamp(max(cons_dataset.keys())).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
+
+    # convert from naive timestamp to tz aware
+    start_time = datetime.fromtimestamp(min(cons_dataset.keys())).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
+    end_time = datetime.fromtimestamp(max(cons_dataset.keys())).replace(tzinfo=dt_util.get_time_zone("Europe/Vilnius"))
 
     prices = await _async_generate_price_dict(hass, obj, start_time, end_time)
 
