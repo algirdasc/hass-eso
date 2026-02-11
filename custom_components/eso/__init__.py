@@ -113,6 +113,7 @@ async def async_insert_statistics(
         metadata = StatisticMetaData(
             has_mean=False,
             has_sum=True,
+            mean_type=None,
             name=f"{obj[CONF_NAME]} ({data_type})",
             source=DOMAIN,
             statistic_id=statistic_id,
@@ -169,6 +170,7 @@ async def async_insert_cost_statistics(
     cost_metadata = StatisticMetaData(
         has_mean=False,
         has_sum=True,
+        mean_type=None,
         name=f"{obj[CONF_NAME]} ({CONF_COST})",
         source=DOMAIN,
         statistic_id=f"{DOMAIN}:energy_{CONF_COST}_{obj[CONF_ID]}",
