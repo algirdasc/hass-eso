@@ -4,7 +4,11 @@ import asyncio
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.models import StatisticMetaData, StatisticData
+from homeassistant.components.recorder.models import (
+    StatisticMetaData,
+    StatisticData,
+    StatisticMeanType,
+)
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics, statistics_during_period,
 )
@@ -111,13 +115,13 @@ async def async_insert_statistics(
         generation_data = dataset[mapped_consumption_type]
         _LOGGER.debug(f"Received ESO data for {statistic_id}: {generation_data}")
         metadata = StatisticMetaData(
-            has_mean=False,
             has_sum=True,
-            mean_type=None,
+            mean_type=StatisticMeanType.NONE,
             name=f"{obj[CONF_NAME]} ({data_type})",
             source=DOMAIN,
             statistic_id=statistic_id,
             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            unit_class="energy",
         )
         _LOGGER.debug(f"Preparing long-term statistics for {statistic_id}")
         statistics = await _async_get_statistics(hass, metadata, generation_data)
@@ -168,13 +172,13 @@ async def async_insert_cost_statistics(
     if prices is None:
         return
     cost_metadata = StatisticMetaData(
-        has_mean=False,
         has_sum=True,
-        mean_type=None,
+        mean_type=StatisticMeanType.NONE,
         name=f"{obj[CONF_NAME]} ({CONF_COST})",
         source=DOMAIN,
         statistic_id=f"{DOMAIN}:energy_{CONF_COST}_{obj[CONF_ID]}",
         unit_of_measurement=obj[CONF_PRICE_CURRENCY],
+        unit_class=None,
     )
     cost_stats: list[StatisticData] = []
     cost_sum_ = None
