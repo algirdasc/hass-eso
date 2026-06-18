@@ -173,17 +173,22 @@ async def _async_get_statistics(hass: HomeAssistant, metadata: StatisticMetaData
     return statistics
 
 async def get_previous_sum(hass: HomeAssistant, metadata: StatisticMetaData, date: datetime) -> float:
+    # Look back far enough to survive multi-day fetch failures and take the most
+    # recent point before `date`. A 1-hour lookup silently resets the cumulative
+    # sum to 0 whenever a gap appears (e.g. failed imports), which corrupts the
+    # long-term energy statistics from that point on.
     statistic_id = metadata["statistic_id"]
-    start = date - timedelta(hours=1)
+    start = date - timedelta(days=60)
     end = date
     _LOGGER.debug(f"Looking history sum for {statistic_id} for {date} between {start} and {end}")
     stat = await get_instance(hass).async_add_executor_job(
         statistics_during_period, hass, start, end, {statistic_id}, "hour", None, {"sum"}
     )
-    if statistic_id not in stat:
+    rows = stat.get(statistic_id) if stat else None
+    if not rows:
         _LOGGER.debug(f"No history sum found")
         return 0.0
-    sum_ = stat[statistic_id][0]["sum"]
+    sum_ = rows[-1].get("sum") or 0.0
     _LOGGER.debug(f"History sum for {statistic_id} = {sum_}")
     return sum_
 
