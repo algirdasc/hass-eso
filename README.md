@@ -37,11 +37,46 @@ If you wish for real-time statistics - consider using 3rd party meters (like She
 
 ### Integration
 
-| Name     |  Type  | Required | Default | Description          |
-|----------|:------:|:--------:|:-------:|----------------------|
-| username | string |   yes    |         | ESO username / email |
-| password | string |   yes    |         | ESO password         |
-| objects  |  list  |   yes    |         | List of objects      |
+| Name     |  Type  | Required | Default | Description                                                            |
+|----------|:------:|:--------:|:-------:|------------------------------------------------------------------------|
+| username | string |   yes    |         | ESO username / email                                                   |
+| password | string |   yes    |         | ESO password                                                           |
+| objects  |  list  |   yes    |         | List of objects                                                        |
+| imap     |  map   |    no    |         | Mailbox used to read ESO's two-factor login codes (see *Two-factor authentication*) |
+
+### Two-factor authentication
+
+ESO now sends a mandatory one-time code by email on **every** login. When an `imap`
+section is configured, the integration completes that step automatically: it reads
+the latest code from your mailbox and submits it. To keep email traffic to a minimum
+it persists the authenticated session (`eso_session.json` in the HA config directory,
+valid ~3 weeks) and only performs a full login + 2FA when that session has expired.
+
+If `imap` is omitted the integration behaves as before and will fail to log in while
+2FA is enforced on your account.
+
+| Name     |  Type  | Required |    Default     | Description                                                                 |
+|----------|:------:|:--------:|:--------------:|-----------------------------------------------------------------------------|
+| host     | string |   yes    | imap.gmail.com | IMAP server host                                                            |
+| port     |  int   |   yes    |      993       | IMAP server port (SSL)                                                      |
+| username | string |   yes    |                | Mailbox username                                                            |
+| password | string |   yes    |                | Mailbox password. For Gmail this must be an [app password](https://support.google.com/accounts/answer/185833), not the account password |
+| sender   | string |    no    | savitarna@eso.lt | Sender address the 2FA code is matched on                                 |
+| folder   | string |    no    |     INBOX      | Mailbox folder to search                                                    |
+
+```yaml
+eso:
+  username: your_username
+  password: your_password
+  imap:
+    host: imap.gmail.com
+    port: 993
+    username: your_mailbox@gmail.com
+    password: your_app_password
+  objects:
+    - name: My House
+      id: 123456
+```
 
 ### Object
 
