@@ -29,6 +29,12 @@ CONF_RETURNED = "returned"
 CONF_COST = "cost"
 CONF_PRICE_ENTITY = "price_entity"
 CONF_PRICE_CURRENCY = "price_currency"
+CONF_IMAP = "imap"
+CONF_IMAP_HOST = "host"
+CONF_IMAP_PORT = "port"
+CONF_IMAP_SENDER = "sender"
+CONF_IMAP_FOLDER = "folder"
+SESSION_FILE = "eso_session.json"
 POWER_CONSUMED = "P+"
 POWER_RETURNED = "P-"
 ENERGY_TYPE_MAP = {
@@ -43,11 +49,20 @@ OBJECT_SCHEMA = vol.Schema({
     vol.Optional(CONF_PRICE_ENTITY): cv.string,
     vol.Optional(CONF_PRICE_CURRENCY, default="EUR"): cv.string,
 })
+IMAP_SCHEMA = vol.Schema({
+    vol.Required(CONF_IMAP_HOST, default="imap.gmail.com"): cv.string,
+    vol.Required(CONF_IMAP_PORT, default=993): cv.port,
+    vol.Required(CONF_USERNAME): cv.string,
+    vol.Required(CONF_PASSWORD): cv.string,
+    vol.Optional(CONF_IMAP_SENDER, default="savitarna@eso.lt"): cv.string,
+    vol.Optional(CONF_IMAP_FOLDER, default="INBOX"): cv.string,
+})
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
         vol.Required(CONF_USERNAME): cv.string,
         vol.Required(CONF_PASSWORD): cv.string,
         vol.Required(CONF_OBJECTS): cv.ensure_list(OBJECT_SCHEMA),
+        vol.Optional(CONF_IMAP): IMAP_SCHEMA,
     })
 }, extra=vol.ALLOW_EXTRA)
 
@@ -57,9 +72,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if DOMAIN not in config:
         return True
     hass.data.setdefault(DOMAIN, config[DOMAIN])
+    imap_config = config[DOMAIN].get(CONF_IMAP)
+    if imap_config:
+        imap_config = {
+            "host": imap_config[CONF_IMAP_HOST],
+            "port": imap_config[CONF_IMAP_PORT],
+            "username": imap_config[CONF_USERNAME],
+            "password": imap_config[CONF_PASSWORD],
+            "sender": imap_config[CONF_IMAP_SENDER],
+            "folder": imap_config[CONF_IMAP_FOLDER],
+        }
     client = ESOClient(
         username=config[DOMAIN][CONF_USERNAME],
-        password=config[DOMAIN][CONF_PASSWORD]
+        password=config[DOMAIN][CONF_PASSWORD],
+        imap_config=imap_config,
+        session_file=hass.config.path(SESSION_FILE),
     )
 
     async def async_import_generation(now: datetime, retry: bool = False) -> None:
