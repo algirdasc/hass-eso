@@ -48,11 +48,16 @@ class ESOClient:
     def login(self) -> None:
         """Establish an authenticated ESO session.
 
-        Strategy: reuse a persisted Drupal session cookie (valid ~3 weeks) so
-        we avoid triggering a 2FA email on every daily run. Only when the
-        stored session is gone/expired do we perform the full
-        password -> email-OTP login. ESO sends a fresh code on *every* login,
-        so session reuse is the only way to keep 2FA emails to ~monthly.
+        Strategy: try to reuse a persisted Drupal session cookie, falling back
+        to a full password -> email-OTP login when it is gone. NOTE: ESO runs
+        Drupal's autologout module (see the Drupal.visitor.autologout_login
+        cookie), which terminates idle sessions after a short inactivity
+        window. A stored session was observed dead only a few hours later, so a
+        once-daily run almost always faces a dead session and performs a full
+        login. Reuse only helps for repeated fetches in quick succession. ESO
+        emails a fresh
+        code on *every* login, so the consumed OTP is deleted after use (see
+        _delete_message) to keep it from accumulating in the inbox.
         """
         self.dataset = {}
         try:
@@ -182,6 +187,10 @@ class ESOClient:
                     continue
                 code = self._extract_code(self._message_text(msg))
                 if code:
+                    # The code is single-use; remove the email so it doesn't
+                    # pile up in the inbox (ESO sends one on every login, and
+                    # its autologout forces a fresh login on each daily run).
+                    self._delete_message(conn, msg_id)
                     return code
             return None
         finally:
@@ -189,6 +198,20 @@ class ESOClient:
                 conn.logout()
             except Exception:  # noqa: BLE001
                 pass
+
+    @staticmethod
+    def _delete_message(conn, msg_id) -> None:
+        """Delete the consumed OTP email and expunge it from the folder.
+
+        Standard IMAP delete (\\Deleted + EXPUNGE). On Gmail this removes the
+        message from the searched folder (e.g. it leaves the inbox); other
+        servers remove it outright. Best-effort: a failure here must never
+        block a successful login."""
+        try:
+            conn.store(msg_id, "+FLAGS", "\\Deleted")
+            conn.expunge()
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("ESO: could not delete consumed OTP email: %s", e)
 
     @staticmethod
     def _parse_msg_date(msg) -> datetime | None:
