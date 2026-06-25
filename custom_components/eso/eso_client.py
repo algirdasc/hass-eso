@@ -9,11 +9,31 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import requests
 from .form_parser import FormParser
+from .objects_parser import (
+    SelectObjectsParser,
+    clean_object_name,
+)
 
 LOGIN_URL = "https://mano.eso.lt/?destination=/consumption"
 GENERATION_URL = "https://mano.eso.lt/consumption?ajax_form=1&_wrapper_format=drupal_ajax"
 TFA_FORM_ID = "gpc_tfa_login_auth_form"
 CONSUMPTION_FORM_ID = "eso_consumption_history_form"
+
+class ESOError(Exception):
+    """Base error for ESO client failures."""
+
+
+class ESOConnectionError(ESOError):
+    """Raised when the ESO service cannot be reached."""
+
+
+class ESOAuthError(ESOError):
+    """Raised when the supplied ESO credentials are rejected."""
+
+
+class ESOTwoFactorError(ESOError):
+    """Raised when a 2FA code is required but could not be obtained."""
+
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -76,6 +96,66 @@ class ESOClient:
             _LOGGER.error(f"ESO login error: {e}")
         except Exception as e:  # noqa: BLE001 - surface IMAP/parse failures too
             _LOGGER.error(f"ESO login failed: {e}")
+
+    # ---- config-flow helpers ----------------------------------------------
+
+    def check_password(self) -> bool:
+        """Validate the ESO username/password without completing 2FA.
+
+        Submits the login form on a throwaway session and reports whether the credentials were accepted:
+        ESO either redirects to the TFA page (2FA enabled, credentials correct) or straight to the consumption page (no 2FA).
+        A re-rendered login form means the credentials were rejected.
+
+        Raises ESOConnectionError if the ESO service cannot be reached.
+        """
+        session = self._new_session()
+        try:
+            response = session.post(
+                LOGIN_URL,
+                data={
+                    "name": self.username,
+                    "pass": self.password,
+                    "login_type": 1,
+                    "form_id": "user_login_form",
+                },
+                allow_redirects=True,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise ESOConnectionError(str(e)) from e
+        if "/user/login/tfa/" in response.url:
+            return True
+        parser = FormParser()
+        parser.feed(response.text)
+        return parser.get("form_id") == CONSUMPTION_FORM_ID
+
+    def discover_objects(self) -> list[dict]:
+        """Return the account's objects as ``[{"id", "name"}]``.
+
+        Performs a full login and scrapes the object IDs from the
+        consumption-page selector. The display name is the option label with
+        the trailing meter number stripped off.
+
+        Raises:
+            ESOConnectionError: ESO could not be reached.
+            ESOAuthError: login did not reach the authenticated consumption page
+                (wrong credentials or a 2FA step that could not be completed).
+        """
+        self.login()
+        if self.form_parser.get("form_id") != CONSUMPTION_FORM_ID:
+            raise ESOAuthError("Login did not reach the consumption page")
+        try:
+            response = self.session.get(LOGIN_URL, allow_redirects=True)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise ESOConnectionError(str(e)) from e
+        select_parser = SelectObjectsParser()
+        select_parser.feed(response.text)
+
+        objects: list[dict] = []
+        for obj_id, label in select_parser.objects.items():
+            objects.append({"id": obj_id, "name": clean_object_name(label)})
+        return objects
 
     def _open_consumption(self) -> bool:
         """GET the consumption page with the current session and parse its
