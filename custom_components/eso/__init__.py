@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta, datetime
 import asyncio
+import random
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.components.recorder import get_instance
@@ -13,10 +14,10 @@ from homeassistant.components.recorder.statistics import (
     async_add_external_statistics, statistics_during_period,
 )
 from homeassistant.const import (
-    CONF_ID, CONF_NAME, CONF_USERNAME, CONF_PASSWORD, UnitOfEnergy, EVENT_HOMEASSISTANT_STARTED
+    CONF_ID, CONF_NAME, CONF_USERNAME, CONF_PASSWORD, UnitOfEnergy
 )
-from homeassistant.core import HomeAssistant, Event
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 from .eso_client import ESOClient
@@ -34,6 +35,7 @@ CONF_IMAP_HOST = "host"
 CONF_IMAP_PORT = "port"
 CONF_IMAP_SENDER = "sender"
 CONF_IMAP_FOLDER = "folder"
+DATA_DAILY_IMPORT_CANCEL = "daily_import_cancel"
 SESSION_FILE = "eso_session.json"
 POWER_CONSUMED = "P+"
 POWER_RETURNED = "P-"
@@ -67,11 +69,30 @@ CONFIG_SCHEMA = vol.Schema({
 }, extra=vol.ALLOW_EXTRA)
 
 RETRY_DELAY_SECONDS = 3 * 3600  # 3 valandų pauzė tarp retry
+DAILY_IMPORT_WINDOW_START_HOUR = 5
+DAILY_IMPORT_WINDOW_START_MINUTE = 10
+DAILY_IMPORT_WINDOW_SECONDS = 50 * 60
+
+
+def _random_daily_import_time(now: datetime) -> datetime:
+    start = now.replace(
+        hour=DAILY_IMPORT_WINDOW_START_HOUR,
+        minute=DAILY_IMPORT_WINDOW_START_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    if now >= start:
+        start += timedelta(days=1)
+    return start + timedelta(seconds=random.randint(0, DAILY_IMPORT_WINDOW_SECONDS))
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if DOMAIN not in config:
         return True
-    hass.data.setdefault(DOMAIN, config[DOMAIN])
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    previous_daily_import_cancel = domain_data.pop(DATA_DAILY_IMPORT_CANCEL, None)
+    if previous_daily_import_cancel:
+        previous_daily_import_cancel()
     imap_config = config[DOMAIN].get(CONF_IMAP)
     if imap_config:
         imap_config = {
@@ -123,8 +144,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         elif all_failed and retry:
             _LOGGER.error("Fetch failed, postponing fetch for next day")
 
-    # Nėra fetch po restart, tik pagal grafiką
-    async_track_time_change(hass, async_import_generation, hour=5, minute=11, second=0)
+    daily_import_cancel = None
+
+    def schedule_daily_import(now: datetime) -> None:
+        nonlocal daily_import_cancel
+        if daily_import_cancel:
+            daily_import_cancel()
+        next_run = _random_daily_import_time(now)
+        daily_import_cancel = async_track_point_in_time(
+            hass,
+            async_run_scheduled_import,
+            next_run,
+        )
+        domain_data[DATA_DAILY_IMPORT_CANCEL] = daily_import_cancel
+        _LOGGER.info("Next ESO import scheduled for %s", next_run.isoformat())
+
+    async def async_run_scheduled_import(now: datetime) -> None:
+        nonlocal daily_import_cancel
+        daily_import_cancel = None
+        domain_data.pop(DATA_DAILY_IMPORT_CANCEL, None)
+        await async_import_generation(now)
+        if not hass.is_stopping:
+            schedule_daily_import(now)
+
+    # No fetch after restart; run once daily at a random time in the morning window.
+    schedule_daily_import(dt_util.now())
     return True
 
 async def async_insert_statistics(
