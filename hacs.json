@@ -2,6 +2,6 @@
   "name": "ESO Energy Statistics Import",
   "content_in_root": false,
   "domains": [],
-  "homeassistant": "2023.6.2",
+  "homeassistant": "2025.6.1",
   "render_readme": true
 }

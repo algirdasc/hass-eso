@@ -1,0 +1,199 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ESO account",
+        "description": "Sign in with your ESO self-service account (https://mano.eso.lt). These are the same credentials you use to log in to the ESO website.",
+        "data": {
+          "username": "Username / email",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Your ESO (mano.eso.lt) username or email address.",
+          "password": "Your ESO account password. It is verified before continuing."
+        }
+      },
+      "imap": {
+        "title": "Two-factor authentication (email)",
+        "description": "ESO emails a one-time code on every login, so a mailbox is required. Enter the mailbox that receives those codes so Home Assistant can read them automatically. For Gmail you must create an App Password (https://support.google.com/accounts/answer/185833) \u2014 your normal password will not work.",
+        "data": {
+          "imap_username": "Mailbox username",
+          "imap_password": "Mailbox password",
+          "host": "IMAP server host",
+          "port": "IMAP server port (SSL)",
+          "sender": "Code sender address",
+          "folder": "Mailbox folder"
+        },
+        "data_description": {
+          "imap_username": "The mailbox login that receives ESO 2FA codes (e.g. your.name@gmail.com).",
+          "imap_password": "Mailbox password. For Gmail/Google use an App Password, not your account password.",
+          "host": "IMAP host, e.g. imap.gmail.com.",
+          "port": "IMAP SSL port, usually 993.",
+          "sender": "Only emails from this address are searched for the code.",
+          "folder": "Folder to search, usually INBOX."
+        }
+      },
+      "objects": {
+        "title": "Select objects",
+        "description": "These metering points (objects) were discovered on your ESO account, named after their address. Choose which ones to track in Home Assistant.",
+        "data": {
+          "selected": "Objects to track"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconfigure ESO account",
+        "description": "ESO now requires email two-factor authentication for {username}. Confirm your password and add the mailbox that receives the one-time codes. For Gmail use an App Password (https://support.google.com/accounts/answer/185833).",
+        "data": {
+          "password": "ESO password",
+          "imap_username": "Mailbox username",
+          "imap_password": "Mailbox password",
+          "host": "IMAP server host",
+          "port": "IMAP server port (SSL)",
+          "sender": "Code sender address",
+          "folder": "Mailbox folder"
+        },
+        "data_description": {
+          "password": "Your ESO account password.",
+          "imap_username": "The mailbox login that receives ESO 2FA codes.",
+          "imap_password": "Mailbox password. For Gmail/Google use an App Password.",
+          "host": "IMAP host, e.g. imap.gmail.com.",
+          "port": "IMAP SSL port, usually 993.",
+          "sender": "Only emails from this address are searched for the code.",
+          "folder": "Folder to search, usually INBOX."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to ESO. Please try again.",
+      "invalid_auth": "Invalid ESO username or password.",
+      "imap_required": "Mailbox username and password are required for two-factor authentication.",
+      "twofa_failed": "Could not complete two-factor login. Check your mailbox (IMAP) settings and that the App Password is correct.",
+      "no_objects_selected": "Select at least one object.",
+      "unknown": "Unexpected error. Check the logs for details."
+    },
+    "abort": {
+      "already_configured": "This ESO account is already configured.",
+      "no_objects": "No objects were found on this ESO account.",
+      "reauth_successful": "Reconfiguration was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update credentials",
+        "description": "Update the ESO password and mailbox (2FA) settings for {username}. To use a different ESO account, add a new integration entry instead.",
+        "data": {
+          "password": "ESO password",
+          "imap_username": "Mailbox username",
+          "imap_password": "Mailbox password",
+          "host": "IMAP server host",
+          "port": "IMAP server port (SSL)",
+          "sender": "Code sender address",
+          "folder": "Mailbox folder"
+        },
+        "data_description": {
+          "password": "Your ESO account password.",
+          "imap_username": "The mailbox login that receives ESO 2FA codes.",
+          "imap_password": "Mailbox password. For Gmail/Google use an App Password.",
+          "host": "IMAP host, e.g. imap.gmail.com.",
+          "port": "IMAP SSL port, usually 993.",
+          "sender": "Only emails from this address are searched for the code.",
+          "folder": "Folder to search, usually INBOX."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to ESO. Please try again.",
+      "invalid_auth": "Invalid ESO username or password.",
+      "imap_required": "Mailbox username and password are required for two-factor authentication.",
+      "twofa_failed": "Could not complete two-factor login. Check your mailbox (IMAP) settings and that the App Password is correct.",
+      "unknown": "Unexpected error. Check the logs for details."
+    }
+  },
+  "config_subentries": {
+    "object": {
+      "title": "Object",
+      "initiate_flow": {
+        "user": "Add object"
+      },
+      "entry_type": "Object",
+      "step": {
+        "user": {
+          "title": "Add object",
+          "description": "Choose a metering point (object) discovered on your ESO account to add. Each is named after its address.",
+          "data": {
+            "object": "Object"
+          }
+        },
+        "settings": {
+          "title": "Object settings",
+          "description": "Settings for {name}.",
+          "data": {
+            "name": "Name",
+            "consumed": "Track consumed energy",
+            "returned": "Track returned energy",
+            "price_entity": "Price entity (cost tracking)",
+            "price_currency": "Price currency"
+          },
+          "data_description": {
+            "name": "Name shown in the energy dashboard.",
+            "consumed": "Generate statistics for energy consumed from the grid.",
+            "returned": "Generate statistics for energy returned to the grid.",
+            "price_entity": "Optional sensor tracking electricity price; enables a cost statistic.",
+            "price_currency": "Currency for the cost statistic (e.g. EUR)."
+          }
+        },
+        "reconfigure": {
+          "title": "Object settings",
+          "description": "Settings for {name}.",
+          "data": {
+            "name": "Name",
+            "consumed": "Track consumed energy",
+            "returned": "Track returned energy",
+            "price_entity": "Price entity (cost tracking)",
+            "price_currency": "Price currency"
+          },
+          "data_description": {
+            "name": "Name shown in the energy dashboard.",
+            "consumed": "Generate statistics for energy consumed from the grid.",
+            "returned": "Generate statistics for energy returned to the grid.",
+            "price_entity": "Optional sensor tracking electricity price; enables a cost statistic.",
+            "price_currency": "Currency for the cost statistic (e.g. EUR)."
+          }
+        }
+      },
+      "abort": {
+        "all_configured": "All discovered objects are already configured.",
+        "reconfigure_successful": "Object settings were updated successfully.",
+        "cannot_connect": "Failed to connect to ESO. Please try again.",
+        "twofa_failed": "Could not complete two-factor login. Check the account's mailbox (IMAP) settings.",
+        "unknown": "Unexpected error. Check the logs for details."
+      }
+    }
+  },
+  "services": {
+    "import_now": {
+      "name": "Import now",
+      "description": "Logs in to ESO and imports the latest consumption statistics on demand.",
+      "fields": {
+        "config_entry_id": {
+          "name": "ESO account",
+          "description": "The ESO account(s) to import. Leave empty to import all configured accounts."
+        }
+      }
+    }
+  },
+  "issues": {
+    "deprecated_yaml": {
+      "title": "ESO YAML configuration is deprecated",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Remove the ESO YAML configuration",
+            "description": "Configuring ESO via configuration.yaml is deprecated. Your existing configuration has been imported and the integration is now available under Settings \u2192 Devices & Services.\n\nRemove the `eso:` block from configuration.yaml and restart Home Assistant, then submit to dismiss this issue."
+          }
+        }
+      }
+    }
+  }
+}
