@@ -71,7 +71,7 @@ CONFIG_SCHEMA = vol.Schema({
 RETRY_DELAY_SECONDS = 3 * 3600  # 3 valandų pauzė tarp retry
 DAILY_IMPORT_WINDOW_START_HOUR = 5
 DAILY_IMPORT_WINDOW_START_MINUTE = 10
-DAILY_IMPORT_WINDOW_SECONDS = 50 * 60
+DAILY_IMPORT_WINDOW_SECONDS = 2 * 3600
 
 
 def _random_daily_import_time(now: datetime) -> datetime:
