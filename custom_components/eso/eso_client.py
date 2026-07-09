@@ -166,7 +166,12 @@ class ESOClient:
         response.raise_for_status()
         self.cookies = requests.utils.dict_from_cookiejar(self.session.cookies)
         self.form_parser.feed(response.text)
-        return self.form_parser.get("form_id") == CONSUMPTION_FORM_ID
+        result = self.form_parser.get("form_id") == CONSUMPTION_FORM_ID
+        _LOGGER.debug("ESO: Consumption form detected: %s", result)
+        if not result:
+            _LOGGER.debug("ESO: Consumption page HTML (first 1000 chars): %s", response.text[:1000])
+            _LOGGER.debug("ESO: All forms found: %s", self.form_parser.forms)
+        return result
 
     def _full_login(self) -> None:
         """Submit the username/password form. ESO redirects to the TFA page
@@ -209,6 +214,8 @@ class ESOClient:
             allow_redirects=True,
         )
         submit.raise_for_status()
+        _LOGGER.debug("ESO: TFA Submit response URL: %s", submit.url)
+        _LOGGER.debug("ESO: TFA Submit HTML sample: %s", submit.text[:500])
 
     @staticmethod
     def _extract_tfa_build_id(html: str) -> str | None:
