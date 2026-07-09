@@ -2,15 +2,17 @@
   "config": {
     "step": {
       "user": {
-        "title": "ESO account",
-        "description": "Sign in with your ESO self-service account (https://mano.eso.lt). These are the same credentials you use to log in to the ESO website.",
+        "title": "Account",
+        "description": "Choose your data provider and sign in. For ESO use your mano.eso.lt credentials; for Ignitis use your Ignitis \"Energy Smart\" (energy-smart-api.ignitis.lt) credentials.",
         "data": {
+          "provider": "Data provider",
           "username": "Username / email",
           "password": "Password"
         },
         "data_description": {
-          "username": "Your ESO (mano.eso.lt) username or email address.",
-          "password": "Your ESO account password. It is verified before continuing."
+          "provider": "ESO (mano.eso.lt) uses an email two-factor code; Ignitis signs in directly without a mailbox.",
+          "username": "Your provider username or email address.",
+          "password": "Your account password. It is verified before continuing."
         }
       },
       "imap": {
@@ -133,14 +135,18 @@
             "consumed": "Track consumed energy",
             "returned": "Track returned energy",
             "price_entity": "Price entity (cost tracking)",
-            "price_currency": "Price currency"
+            "price_currency": "Price currency",
+            "fixed_price": "Fixed price per kWh",
+            "export_balance": "Track export balance (Ignitis)"
           },
           "data_description": {
             "name": "Name shown in the energy dashboard.",
             "consumed": "Generate statistics for energy consumed from the grid.",
             "returned": "Generate statistics for energy returned to the grid.",
             "price_entity": "Optional sensor tracking electricity price; enables a cost statistic.",
-            "price_currency": "Currency for the cost statistic (e.g. EUR)."
+            "price_currency": "Currency for the cost statistic (e.g. EUR).",
+            "fixed_price": "Optional flat price per kWh, used for the cost statistic when no price entity is set.",
+            "export_balance": "Track the export balance reported by Ignitis (no effect for ESO)."
           }
         },
         "reconfigure": {
@@ -151,14 +157,18 @@
             "consumed": "Track consumed energy",
             "returned": "Track returned energy",
             "price_entity": "Price entity (cost tracking)",
-            "price_currency": "Price currency"
+            "price_currency": "Price currency",
+            "fixed_price": "Fixed price per kWh",
+            "export_balance": "Track export balance (Ignitis)"
           },
           "data_description": {
             "name": "Name shown in the energy dashboard.",
             "consumed": "Generate statistics for energy consumed from the grid.",
             "returned": "Generate statistics for energy returned to the grid.",
             "price_entity": "Optional sensor tracking electricity price; enables a cost statistic.",
-            "price_currency": "Currency for the cost statistic (e.g. EUR)."
+            "price_currency": "Currency for the cost statistic (e.g. EUR).",
+            "fixed_price": "Optional flat price per kWh, used for the cost statistic when no price entity is set.",
+            "export_balance": "Track the export balance reported by Ignitis (no effect for ESO)."
           }
         }
       },
@@ -179,6 +189,10 @@
         "config_entry_id": {
           "name": "ESO account",
           "description": "The ESO account(s) to import. Leave empty to import all configured accounts."
+        },
+        "date": {
+          "name": "Date",
+          "description": "Optional reference date to import (defaults to now); use it to backfill a past day. The day imported is relative to this date exactly as the daily run is: for Ignitis the previous day is fetched."
         }
       }
     }
@@ -193,6 +207,14 @@
             "description": "Configuring ESO via configuration.yaml is deprecated. Your existing configuration has been imported and the integration is now available under Settings \u2192 Devices & Services.\n\nRemove the `eso:` block from configuration.yaml and restart Home Assistant, then submit to dismiss this issue."
           }
         }
+      }
+    }
+  },
+  "selector": {
+    "provider": {
+      "options": {
+        "eso": "ESO",
+        "ignitis": "Ignitis"
       }
     }
   }
