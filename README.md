@@ -11,7 +11,7 @@ technical possibilities to add P1 interface (for example meter is far away from 
 Keep in mind, that ESO site provides data for last 24 hours,
 therefore refresh rate is quite slow (check for new data is performed every 2 hours).
 If you wish for real-time statistics - consider using 3rd party meters (like Shelly 3EM) or utilise P1 interface of smart meter.
-The daily ESO import is scheduled once per day at a random time between 05:10 and 06:00 to avoid all installations calling ESO at the same moment.
+The daily ESO import is scheduled once per day at a random time between 05:10 and 07:10 to avoid all installations calling ESO at the same moment.
 
 ### Disclaimer
 
