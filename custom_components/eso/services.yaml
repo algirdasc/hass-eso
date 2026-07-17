@@ -6,3 +6,13 @@ import_now:
       selector:
         config_entry:
           integration: eso
+    date_from:
+      required: false
+      example: "2026-01-01"
+      selector:
+        date:
+    date_to:
+      required: false
+      example: "2026-07-16"
+      selector:
+        date:

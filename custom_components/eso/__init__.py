@@ -33,6 +33,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
+    ATTR_DATE_FROM,
+    ATTR_DATE_TO,
     CONF_CONSUMED,
     CONF_COST,
     CONF_IMAP,
@@ -110,7 +112,11 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 SERVICE_IMPORT_NOW_SCHEMA = vol.Schema(
-    {vol.Optional(ATTR_CONFIG_ENTRY_ID): vol.All(cv.ensure_list, [cv.string])}
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional(ATTR_DATE_FROM): cv.date,
+        vol.Optional(ATTR_DATE_TO): cv.date,
+    }
 )
 
 
@@ -184,7 +190,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
         session_file=hass.config.path(SESSION_FILE),
     )
 
-    async def async_import_generation(now: datetime, retry: bool = False) -> None:
+    async def async_import_generation(
+        now: datetime,
+        retry: bool = False,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> None:
         if hass.is_stopping:
             _LOGGER.debug("HA is stopping, skipping generation import")
             return
@@ -199,7 +210,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
         for obj in objects:
             _LOGGER.info("Fetching ESO dataset [%s]", obj[CONF_NAME])
             try:
-                await hass.async_add_executor_job(client.fetch_dataset, obj[CONF_ID], now)
+                if date_from is not None:
+                    await hass.async_add_executor_job(
+                        client.fetch_dataset_range,
+                        obj[CONF_ID],
+                        date_from,
+                        date_to or now,
+                    )
+                else:
+                    await hass.async_add_executor_job(client.fetch_dataset, obj[CONF_ID], now)
             except Exception as err:
                 _LOGGER.error("ESO fetch dataset error [%s]: %s", obj[CONF_NAME], err)
                 all_failed = True
@@ -209,7 +228,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
             if obj.get(CONF_PRICE_ENTITY):
                 await async_insert_cost_statistics(hass, obj, dataset)
             _LOGGER.info("Import completed for %s", obj[CONF_NAME])
-        if all_failed and not retry:
+        # Range (backfill) imports are user-invoked one-offs — no silent retry.
+        if all_failed and not retry and date_from is None:
             _LOGGER.warning("Fetch failed, will retry later")
 
             async def _retry(_now: datetime) -> None:
@@ -272,9 +292,23 @@ def _async_register_services(hass: HomeAssistant) -> None:
             targets = [entry.runtime_data.async_import for entry in entries]
         if not targets:
             raise ServiceValidationError("No ESO accounts are configured")
+        date_from = call.data.get(ATTR_DATE_FROM)
+        date_to = call.data.get(ATTR_DATE_TO)
+        if date_to and not date_from:
+            raise ServiceValidationError("date_to requires date_from")
+        if date_from and date_to and date_from > date_to:
+            raise ServiceValidationError("date_from must not be after date_to")
+        kwargs = {}
+        if date_from:
+            kwargs = {
+                "date_from": datetime.combine(date_from, datetime.min.time()),
+                "date_to": datetime.combine(date_to, datetime.min.time())
+                if date_to
+                else None,
+            }
         _LOGGER.info("ESO: on-demand import requested for %d account(s)", len(targets))
         for callback in targets:
-            await callback(datetime.now())
+            await callback(datetime.now(), **kwargs)
 
     hass.services.async_register(
         DOMAIN,
