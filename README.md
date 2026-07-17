@@ -94,6 +94,21 @@ Each object (metering point) exposes the following settings via **Reconfigure**:
 | price_entity   | string  |    no    |         | Name of an entity tracking electricity price         |
 | price_currency | string  |    no    |   EUR   | Currency of electricity price                        |
 
+### Stored energy (storage bank) sensor
+
+For objects with **returned** enabled, the integration creates a
+`sensor.eso_stored_energy_<object_id>` entity with the official storage-bank
+("pasaugojimas") balance from the self-service portal — the same number the
+portal shows under *Rodyti sukauptos energijos kiekį*.
+
+The sensor reports the balance (kWh) at the end of the last **closed** month of
+the current bank year (April 1 – March 31); ESO reports the still-open month as
+0 until it closes it. The full monthly series is available in the `series`
+attribute. Note that the bank never goes below zero: a deficit month (imported
+more than exported) drains it at most to 0, so a running `returned − consumed`
+sum can understate the real balance. The sensor refreshes together with the
+daily import and keeps its last value across restarts.
+
 ### Example with cost calculation
 
 The example below is using the [Nord Pool integration for Home Assistant](https://github.com/custom-components/nordpool).
