@@ -367,7 +367,12 @@ class ESOClient:
         self.session.cookies = requests.utils.cookiejar_from_dict(jar)
         return True
 
-    def fetch(self, obj: str, date: datetime) -> dict:
+    def fetch(
+        self,
+        obj: str,
+        date: datetime,
+        date_range: tuple[datetime, datetime] | None = None,
+    ) -> dict:
         if not self.cookies:
             _LOGGER.error("Cookies are empty. Check your credentials.")
             return {}
@@ -396,6 +401,13 @@ class ESOClient:
             "_drupal_ajax": "1",
             "_triggering_element_name": "display_type",
         }
+        if date_range is not None:
+            # The weekly view ignores active_date_value and always renders the
+            # last 7 days; the "Kita" (custom) period is the only server-side
+            # path to historical hourly data.
+            data["period"] = "other"
+            data["other_start"] = date_range[0].strftime("%Y-%m-%d")
+            data["other_end"] = date_range[1].strftime("%Y-%m-%d")
         try:
             response = self.session.post(
                 GENERATION_URL,
@@ -415,7 +427,31 @@ class ESOClient:
         if obj in self.dataset:
             return self.dataset[obj]
         self.dataset[obj] = {}
-        data = self.fetch(obj, date)
+        self._merge_response(obj, self.fetch(obj, date))
+        return self.dataset[obj]
+
+    def fetch_dataset_range(
+        self, obj: str, date_from: datetime, date_to: datetime
+    ) -> dict | None:
+        """Fetch hourly data for an arbitrary date range (history backfill).
+
+        Uses the form's "Kita" (custom) period, which returns the whole range
+        hourly in one response; very long ranges are split into ~90-day
+        requests. The merged series is sorted chronologically because the
+        statistics writer builds cumulative sums in iteration order."""
+        self.dataset[obj] = {}
+        start = date_from
+        while start <= date_to:
+            end = min(start + timedelta(days=89), date_to)
+            self._merge_response(obj, self.fetch(obj, end, date_range=(start, end)))
+            start = end + timedelta(days=1)
+            if start <= date_to:
+                time.sleep(1)
+        for consumption_type, series in self.dataset[obj].items():
+            self.dataset[obj][consumption_type] = dict(sorted(series.items()))
+        return self.dataset[obj]
+
+    def _merge_response(self, obj: str, data: dict) -> None:
         for d in data:
             if d.get("command") == "update_build_id":
                 self.form_parser.set("form_build_id", d["new"])
@@ -429,8 +465,7 @@ class ESOClient:
                 consumption_type = dataset["key"]
                 if consumption_type not in self.dataset[obj]:
                     self.dataset[obj][consumption_type] = {}
-                self.dataset[obj][consumption_type] = self.parse_dataset(dataset)
-        return self.dataset[obj]
+                self.dataset[obj][consumption_type].update(self.parse_dataset(dataset))
 
     def get_dataset(self, obj: str) -> dict | None:
         if obj not in self.dataset:

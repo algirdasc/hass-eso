@@ -45,3 +45,5 @@ SUBENTRY_TYPE_OBJECT = "object"
 # Service to trigger an on-demand import
 SERVICE_IMPORT_NOW = "import_now"
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+ATTR_DATE_FROM = "date_from"
+ATTR_DATE_TO = "date_to"
