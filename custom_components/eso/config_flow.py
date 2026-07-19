@@ -23,6 +23,8 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_CONSUMED,
+    CONF_EXPORT_BALANCE,
+    CONF_FIXED_PRICE,
     CONF_IMAP,
     CONF_IMAP_FOLDER,
     CONF_IMAP_HOST,
@@ -31,13 +33,18 @@ from .const import (
     CONF_OBJECTS,
     CONF_PRICE_CURRENCY,
     CONF_PRICE_ENTITY,
+    CONF_PROVIDER,
     CONF_RETURNED,
     DEFAULT_IMAP_FOLDER,
     DEFAULT_IMAP_HOST,
     DEFAULT_IMAP_PORT,
     DEFAULT_IMAP_SENDER,
     DEFAULT_PRICE_CURRENCY,
+    DEFAULT_PROVIDER,
     DOMAIN,
+    PROVIDER_ESO,
+    PROVIDER_IGNITIS,
+    PROVIDERS,
     SESSION_FILE,
     SUBENTRY_TYPE_OBJECT,
 )
@@ -47,6 +54,7 @@ from .eso_client import (
     ESOConnectionError,
     ESOError,
 )
+from .ignitis_client import IgnitisClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,6 +122,39 @@ def _runtime_imap(imap: dict | None) -> dict | None:
     }
 
 
+def _provider_selector() -> selector.SelectSelector:
+    """A translatable dropdown of the available data providers."""
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=PROVIDERS,
+            translation_key=CONF_PROVIDER,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _make_client(
+    hass, provider: str, username: str, password: str, imap: dict | None = None
+) -> ESOClient | IgnitisClient:
+    """Build the data-provider client for validation and object discovery."""
+    if provider == PROVIDER_IGNITIS:
+        return IgnitisClient(username=username, password=password)
+    return ESOClient(
+        username=username,
+        password=password,
+        imap_config=_runtime_imap(imap),
+        session_file=hass.config.path(SESSION_FILE),
+    )
+
+
+def _unique_id(provider: str, username: str) -> str:
+    """Namespace the unique id per provider so the same email can be used on
+    both providers. ESO keeps the bare username for backward compatibility."""
+    if provider == PROVIDER_ESO:
+        return username.lower()
+    return f"{provider}:{username.lower()}"
+
+
 def _settings_schema(defaults: dict) -> vol.Schema:
     """Schema for a single object's settings (used for add & reconfigure)."""
     return vol.Schema(
@@ -135,6 +176,15 @@ def _settings_schema(defaults: dict) -> vol.Schema:
                 CONF_PRICE_CURRENCY,
                 default=defaults.get(CONF_PRICE_CURRENCY, DEFAULT_PRICE_CURRENCY),
             ): str,
+            vol.Optional(
+                CONF_FIXED_PRICE,
+                description={"suggested_value": defaults.get(CONF_FIXED_PRICE)},
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(mode="box", step="any")
+            ),
+            vol.Required(
+                CONF_EXPORT_BALANCE, default=defaults.get(CONF_EXPORT_BALANCE, False)
+            ): bool,
         }
     )
 
@@ -147,10 +197,14 @@ def _object_from_settings(obj_id: str, name: str, user_input: dict) -> dict:
         CONF_CONSUMED: user_input[CONF_CONSUMED],
         CONF_RETURNED: user_input[CONF_RETURNED],
         CONF_PRICE_CURRENCY: user_input[CONF_PRICE_CURRENCY],
+        CONF_EXPORT_BALANCE: user_input.get(CONF_EXPORT_BALANCE, False),
     }
     price_entity = user_input.get(CONF_PRICE_ENTITY)
     if price_entity:
         obj[CONF_PRICE_ENTITY] = price_entity
+    fixed_price = user_input.get(CONF_FIXED_PRICE)
+    if fixed_price is not None:
+        obj[CONF_FIXED_PRICE] = fixed_price
     return obj
 
 
@@ -170,24 +224,30 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
+        self._provider: str = DEFAULT_PROVIDER
         self._username: str | None = None
         self._password: str | None = None
         self._imap: dict | None = None
         self._discovered: list[dict] = []
         self._reauth_entry: ConfigEntry | None = None
 
-    # ---- step 1: ESO credentials ------------------------------------------
+    # ---- step 1: provider + credentials -----------------------------------
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            self._provider = user_input[CONF_PROVIDER]
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
-            await self.async_set_unique_id(self._username.lower())
+            await self.async_set_unique_id(
+                _unique_id(self._provider, self._username)
+            )
             self._abort_if_unique_id_configured()
-            client = ESOClient(username=self._username, password=self._password)
+            client = _make_client(
+                self.hass, self._provider, self._username, self._password
+            )
             try:
                 valid = await self.hass.async_add_executor_job(client.check_password)
             except ESOConnectionError:
@@ -196,11 +256,17 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 if valid:
+                    if self._provider == PROVIDER_IGNITIS:
+                        return await self.async_step_objects()
                     return await self.async_step_imap()
                 errors["base"] = "invalid_auth"
 
         schema = vol.Schema(
-            {vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str}
+            {
+                vol.Required(CONF_PROVIDER, default=DEFAULT_PROVIDER): _provider_selector(),
+                vol.Required(CONF_USERNAME): str,
+                vol.Required(CONF_PASSWORD): str,
+            }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
@@ -229,11 +295,12 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if not self._discovered:
-            client = ESOClient(
-                username=self._username,
-                password=self._password,
-                imap_config=_runtime_imap(self._imap),
-                session_file=self.hass.config.path(SESSION_FILE),
+            client = _make_client(
+                self.hass,
+                self._provider,
+                self._username,
+                self._password,
+                self._imap,
             )
             try:
                 self._discovered = await self.hass.async_add_executor_job(
@@ -247,6 +314,18 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             if errors:
                 # Let the user revisit the IMAP step and retry.
+                if self._provider == PROVIDER_IGNITIS:
+                    return self.async_show_form(
+                        step_id="user",
+                        data_schema=vol.Schema(
+                            {
+                                vol.Required(CONF_PROVIDER, default=self._provider): _provider_selector(),
+                                vol.Required(CONF_USERNAME, default=self._username): str,
+                                vol.Required(CONF_PASSWORD): str,
+                            }
+                        ),
+                        errors=errors,
+                    )
                 return self.async_show_form(
                     step_id="imap", data_schema=_imap_schema(), errors=errors
                 )
@@ -274,10 +353,12 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                     if obj[CONF_ID] in selected
                 ]
                 data: dict[str, Any] = {
+                    CONF_PROVIDER: self._provider,
                     CONF_USERNAME: self._username,
                     CONF_PASSWORD: self._password,
-                    CONF_IMAP: self._imap,
                 }
+                if self._provider == PROVIDER_ESO:
+                    data[CONF_IMAP] = self._imap
                 return self.async_create_entry(
                     title=self._username, data=data, subentries=subentries
                 )
@@ -297,15 +378,17 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
         username = import_data[CONF_USERNAME]
-        await self.async_set_unique_id(username.lower())
+        provider = import_data.get(CONF_PROVIDER, DEFAULT_PROVIDER)
+        await self.async_set_unique_id(_unique_id(provider, username))
         self._abort_if_unique_id_configured()
 
         data: dict[str, Any] = {
+            CONF_PROVIDER: provider,
             CONF_USERNAME: username,
             CONF_PASSWORD: import_data[CONF_PASSWORD],
         }
         imap = import_data.get(CONF_IMAP)
-        if imap:
+        if imap and provider == PROVIDER_ESO:
             data[CONF_IMAP] = {
                 CONF_USERNAME: imap[CONF_USERNAME],
                 CONF_PASSWORD: imap[CONF_PASSWORD],
@@ -325,9 +408,12 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_PRICE_CURRENCY: obj.get(
                     CONF_PRICE_CURRENCY, DEFAULT_PRICE_CURRENCY
                 ),
+                CONF_EXPORT_BALANCE: obj.get(CONF_EXPORT_BALANCE, False),
             }
             if obj.get(CONF_PRICE_ENTITY):
                 entry[CONF_PRICE_ENTITY] = obj[CONF_PRICE_ENTITY]
+            if obj.get(CONF_FIXED_PRICE) is not None:
+                entry[CONF_FIXED_PRICE] = obj[CONF_FIXED_PRICE]
             subentries.append(_object_subentry(entry))
 
         return self.async_create_entry(
@@ -424,17 +510,17 @@ class ESOOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         data = self.config_entry.data
+        provider = data.get(CONF_PROVIDER, DEFAULT_PROVIDER)
         imap = data.get(CONF_IMAP) or {}
+        is_eso = provider == PROVIDER_ESO
 
         if user_input is not None:
             username = data[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
-            if not user_input.get(CONF_IMAP_USERNAME) or not user_input.get(
-                CONF_IMAP_PASSWORD
-            ):
+            if is_eso and (not user_input.get(CONF_IMAP_USERNAME) or not user_input.get(CONF_IMAP_PASSWORD)):
                 errors["base"] = "imap_required"
             else:
-                client = ESOClient(username=username, password=password)
+                client = _make_client(self.hass, provider, username, password)
                 try:
                     valid = await self.hass.async_add_executor_job(
                         client.check_password
@@ -447,30 +533,34 @@ class ESOOptionsFlow(OptionsFlow):
                     if not valid:
                         errors["base"] = "invalid_auth"
             if not errors:
+                new_data: dict[str, Any] = {
+                    CONF_PROVIDER: provider,
+                    CONF_USERNAME: username,
+                    CONF_PASSWORD: password,
+                }
+                if is_eso:
+                    new_data[CONF_IMAP] = _build_imap_config(user_input)
                 self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={
-                        CONF_USERNAME: username,
-                        CONF_PASSWORD: password,
-                        CONF_IMAP: _build_imap_config(user_input),
-                    },
+                    self.config_entry, data=new_data
                 )
                 return self.async_create_entry(data={})
 
         schema = vol.Schema(
             {vol.Required(CONF_PASSWORD, default=data.get(CONF_PASSWORD)): str}
-        ).extend(
-            _imap_schema(
-                {
-                    CONF_IMAP_USERNAME: imap.get(CONF_USERNAME, ""),
-                    CONF_IMAP_PASSWORD: imap.get(CONF_PASSWORD, ""),
-                    CONF_IMAP_HOST: imap.get(CONF_IMAP_HOST, DEFAULT_IMAP_HOST),
-                    CONF_IMAP_PORT: imap.get(CONF_IMAP_PORT, DEFAULT_IMAP_PORT),
-                    CONF_IMAP_SENDER: imap.get(CONF_IMAP_SENDER, DEFAULT_IMAP_SENDER),
-                    CONF_IMAP_FOLDER: imap.get(CONF_IMAP_FOLDER, DEFAULT_IMAP_FOLDER),
-                }
-            ).schema
         )
+        if is_eso:
+            schema = schema.extend(
+                _imap_schema(
+                    {
+                        CONF_IMAP_USERNAME: imap.get(CONF_USERNAME, ""),
+                        CONF_IMAP_PASSWORD: imap.get(CONF_PASSWORD, ""),
+                        CONF_IMAP_HOST: imap.get(CONF_IMAP_HOST, DEFAULT_IMAP_HOST),
+                        CONF_IMAP_PORT: imap.get(CONF_IMAP_PORT, DEFAULT_IMAP_PORT),
+                        CONF_IMAP_SENDER: imap.get(CONF_IMAP_SENDER, DEFAULT_IMAP_SENDER),
+                        CONF_IMAP_FOLDER: imap.get(CONF_IMAP_FOLDER, DEFAULT_IMAP_FOLDER),
+                    }
+                ).schema
+            )
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
@@ -495,11 +585,12 @@ class ESOObjectSubentryFlow(ConfigSubentryFlow):
         entry = self._get_entry()
 
         if not self._discovered:
-            client = ESOClient(
-                username=entry.data[CONF_USERNAME],
-                password=entry.data[CONF_PASSWORD],
-                imap_config=_runtime_imap(entry.data.get(CONF_IMAP)),
-                session_file=self.hass.config.path(SESSION_FILE),
+            client = _make_client(
+                self.hass,
+                entry.data.get(CONF_PROVIDER, DEFAULT_PROVIDER),
+                entry.data[CONF_USERNAME],
+                entry.data[CONF_PASSWORD],
+                entry.data.get(CONF_IMAP),
             )
             try:
                 self._discovered = await self.hass.async_add_executor_job(
