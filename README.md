@@ -155,8 +155,42 @@ If you have a flat tariff instead of an hourly price sensor, leave **price entit
 ### On-demand import
 
 The `eso.import_now` service triggers an import immediately instead of waiting for the daily run.
-It accepts an optional **date** — set it to (re)import a specific past day (for example, to backfill a
-day that was missed).
+All fields are optional:
+
+| Field             | Description                                                                                     |
+|-------------------|-------------------------------------------------------------------------------------------------|
+| `config_entry_id` | The account(s) to import. Leave empty to import every configured account.                        |
+| `date_from`       | First day to import. Set it to backfill history instead of importing the usual daily window.      |
+| `date_to`         | Last day of the backfill range (defaults to today). Requires `date_from`.                         |
+
+Without `date_from` the service imports the same window as the daily run. With it, the whole
+`date_from`…`date_to` range is fetched hourly — useful for filling gaps or seeding history on a new
+install. Backfill works for **both providers**; long ranges are split into several requests
+automatically (ESO in ~90-day chunks, Ignitis in weekly chunks, because the Ignitis API serves at
+most 8 days per request and silently truncates anything wider). Since Ignitis publishes complete days
+only, an Ignitis range is clamped to yesterday. Expect a long Ignitis backfill to take a while — a
+request per week of history, one second apart (verified: 180 days imports in ~26 requests).
+
+A backfill imports the energy (and cost) series only. The **export balance** is skipped, because
+providers report just the balance as it stands today and no history for it — recording it during a
+backfill would file today's balance under a past hour.
+
+Backfill imports are one-offs: unlike the daily run they are not retried automatically if a fetch
+fails. A backfill that ends up short logs an error naming the days it is missing, so re-run the
+service for those.
+
+One caveat on ordering: Home Assistant stores a running total per hour, and an import continues the
+total from the last hour before the range it writes. Statistics that already exist *after* the
+imported range keep their old totals, so filling a gap that sits before data you already have leaves
+a seam at the join — usually a one-off spike or a flat hour in the energy dashboard. To avoid it,
+end the range at today (`date_from` only) so everything after the gap is rewritten too.
+
+```yaml
+action: eso.import_now
+data:
+  date_from: "2026-01-01"
+  date_to: "2026-06-30"
+```
 
 
 # TODO
