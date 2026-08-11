@@ -194,7 +194,7 @@ class ESOClient:
         _LOGGER.debug("ESO: Consumption form detected: %s", result)
         if not result:
             _LOGGER.debug("ESO: Consumption page HTML (first 1000 chars): %s", response.text[:1000])
-            _LOGGER.debug("ESO: All forms found: %s", self.form_parser.forms)
+            _LOGGER.debug("ESO: All forms found: %s", self.form_parser.form)
         return result
 
     def _switch_profile(self) -> bool:
