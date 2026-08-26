@@ -66,6 +66,9 @@ IGNITIS_IMPORT_HOUR = 10
 IGNITIS_IMPORT_MINUTE = 30
 IGNITIS_RETRY_DELAY_SECONDS = 10 * 60
 IGNITIS_MAX_RETRIES = 10
+# Ignitis serves at most 8 days per request and silently truncates a wider
+# window to the most recent days, so backfills are split into weekly requests.
+IGNITIS_RANGE_CHUNK_DAYS = 7
 
 # Subentry type: one metering point (object) per subentry
 SUBENTRY_TYPE_OBJECT = "object"

@@ -37,7 +37,7 @@
       },
       "objects": {
         "title": "Select objects",
-        "description": "These metering points (objects) were discovered on your ESO account, named after their address. Choose which ones to track in Home Assistant.",
+        "description": "These metering points (objects) were discovered on your account, named after their address. Choose which ones to track in Home Assistant.",
         "data": {
           "selected": "Objects to track"
         }
@@ -66,16 +66,16 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to ESO. Please try again.",
-      "invalid_auth": "Invalid ESO username or password.",
+      "cannot_connect": "Failed to connect to your energy provider. Please try again.",
+      "invalid_auth": "Invalid username or password.",
       "imap_required": "Mailbox username and password are required for two-factor authentication.",
       "twofa_failed": "Could not complete two-factor login. Check your mailbox (IMAP) settings and that the App Password is correct.",
       "no_objects_selected": "Select at least one object.",
       "unknown": "Unexpected error. Check the logs for details."
     },
     "abort": {
-      "already_configured": "This ESO account is already configured.",
-      "no_objects": "No objects were found on this ESO account.",
+      "already_configured": "This account is already configured.",
+      "no_objects": "No objects were found on this account.",
       "reauth_successful": "Reconfiguration was successful."
     }
   },
@@ -83,9 +83,9 @@
     "step": {
       "init": {
         "title": "Update credentials",
-        "description": "Update the ESO password and mailbox (2FA) settings for {username}. To use a different ESO account, add a new integration entry instead.",
+        "description": "Update the account password for {username}. ESO accounts can also update their mailbox (2FA) settings here. To use a different account, add a new integration entry instead.",
         "data": {
-          "password": "ESO password",
+          "password": "Password",
           "imap_username": "Mailbox username",
           "imap_password": "Mailbox password",
           "host": "IMAP server host",
@@ -94,7 +94,7 @@
           "folder": "Mailbox folder"
         },
         "data_description": {
-          "password": "Your ESO account password.",
+          "password": "Your provider account password.",
           "imap_username": "The mailbox login that receives ESO 2FA codes.",
           "imap_password": "Mailbox password. For Gmail/Google use an App Password.",
           "host": "IMAP host, e.g. imap.gmail.com.",
@@ -105,8 +105,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to ESO. Please try again.",
-      "invalid_auth": "Invalid ESO username or password.",
+      "cannot_connect": "Failed to connect to your energy provider. Please try again.",
+      "invalid_auth": "Invalid username or password.",
       "imap_required": "Mailbox username and password are required for two-factor authentication.",
       "twofa_failed": "Could not complete two-factor login. Check your mailbox (IMAP) settings and that the App Password is correct.",
       "unknown": "Unexpected error. Check the logs for details."
@@ -122,7 +122,7 @@
       "step": {
         "user": {
           "title": "Add object",
-          "description": "Choose a metering point (object) discovered on your ESO account to add. Each is named after its address.",
+          "description": "Choose a metering point (object) discovered on your account to add. Each is named after its address.",
           "data": {
             "object": "Object"
           }
@@ -175,7 +175,7 @@
       "abort": {
         "all_configured": "All discovered objects are already configured.",
         "reconfigure_successful": "Object settings were updated successfully.",
-        "cannot_connect": "Failed to connect to ESO. Please try again.",
+        "cannot_connect": "Failed to connect to your energy provider. Please try again.",
         "twofa_failed": "Could not complete two-factor login. Check the account's mailbox (IMAP) settings.",
         "unknown": "Unexpected error. Check the logs for details."
       }
@@ -184,15 +184,19 @@
   "services": {
     "import_now": {
       "name": "Import now",
-      "description": "Logs in to ESO and imports the latest consumption statistics on demand.",
+      "description": "Signs in to your energy provider (ESO or Ignitis) and imports the latest consumption statistics on demand.",
       "fields": {
         "config_entry_id": {
-          "name": "ESO account",
-          "description": "The ESO account(s) to import. Leave empty to import all configured accounts."
+          "name": "Account",
+          "description": "The account(s) to import. Leave empty to import all configured accounts."
         },
-        "date": {
-          "name": "Date",
-          "description": "Optional reference date to import (defaults to now); use it to backfill a past day. The day imported is relative to this date exactly as the daily run is: for Ignitis the previous day is fetched."
+        "date_from": {
+          "name": "Date from",
+          "description": "Optional first day to import. Set it to backfill history instead of the usual daily window; supported by both ESO and Ignitis."
+        },
+        "date_to": {
+          "name": "Date to",
+          "description": "Optional last day of the backfill range (defaults to today). Requires date from. Ignitis publishes complete days only, so the range is clamped to yesterday."
         }
       }
     }

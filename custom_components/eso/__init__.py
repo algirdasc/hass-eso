@@ -274,10 +274,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
             _LOGGER.error("Authentication failed: %s. Reconfigure the integration to update credentials.", err)
             auth_failed = True
         except Exception as err:
-            _LOGGER.error("ESO login error: %s", err)
+            _LOGGER.error("%s login error: %s", provider.upper(), err)
             all_failed = True
         for obj in objects if not auth_failed else []:
-            _LOGGER.info("Fetching ESO dataset [%s]", obj[CONF_NAME])
+            _LOGGER.info("Fetching %s dataset [%s]", provider.upper(), obj[CONF_NAME])
             try:
                 if date_from is not None:
                     await hass.async_add_executor_job(
@@ -293,12 +293,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
                 auth_failed = True
                 break
             except Exception as err:
-                _LOGGER.error("ESO fetch dataset error [%s]: %s", obj[CONF_NAME], err)
+                _LOGGER.error("%s fetch dataset error [%s]: %s", provider.upper(), obj[CONF_NAME], err)
                 all_failed = True
                 continue
             dataset = client.get_dataset(obj[CONF_ID])
             target_day = (now - timedelta(days=1)).date()
-            if provider == PROVIDER_IGNITIS and _need_retry(dataset, target_day):
+            # Only the daily run can be incomplete because yesterday's data is
+            # not published yet; a backfill spans days that are already closed.
+            if (
+                provider == PROVIDER_IGNITIS
+                and date_from is None
+                and _need_retry(dataset, target_day)
+            ):
                 _LOGGER.warning("Received incomplete data for %s, will retry later", obj[CONF_NAME])
                 all_failed = True
                 continue
@@ -307,7 +313,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
                 await async_insert_cost_statistics(hass, obj, dataset)
             elif obj.get(CONF_FIXED_PRICE) is not None:
                 await async_insert_fixed_price_cost_statistics(hass, obj, dataset)
-            if obj.get(CONF_EXPORT_BALANCE):
+            # Providers report the balance as it stands now, with no history, so
+            # a backfill must not record it: it would land at the end of the
+            # requested range and claim today's balance for that past hour.
+            if obj.get(CONF_EXPORT_BALANCE) and date_from is None:
                 await async_insert_export_balance_statistics(hass, obj, dataset)
             # Storage bank is an ESO portal feature; IgnitisClient has no fetch_stored
             if obj.get(CONF_RETURNED) and hasattr(client, "fetch_stored"):
@@ -354,7 +363,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
             async_run_scheduled_import,
             next_run,
         )
-        _LOGGER.info("Next daily ESO import scheduled for %s", next_run.isoformat())
+        _LOGGER.info("Next daily import scheduled for %s", next_run.isoformat())
 
     async def async_run_scheduled_import(now: datetime) -> None:
         nonlocal daily_import_cancel
@@ -389,14 +398,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
             unknown = [eid for eid in entry_ids if eid not in by_id]
             if unknown:
                 raise ServiceValidationError(
-                    f"Unknown ESO config entry id(s): {', '.join(unknown)}"
+                    f"Unknown config entry id(s): {', '.join(unknown)}"
                 )
             target_entries = [by_id[eid] for eid in entry_ids]
         else:
             target_entries = entries
         targets = [entry.runtime_data.async_import for entry in target_entries]
         if not targets:
-            raise ServiceValidationError("No ESO accounts are configured")
+            raise ServiceValidationError("No energy provider accounts are configured")
         date_from = call.data.get(ATTR_DATE_FROM)
         date_to = call.data.get(ATTR_DATE_TO)
         if date_to and not date_from:
@@ -405,13 +414,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             raise ServiceValidationError("date_from must not be after date_to")
         kwargs = {}
         if date_from:
-            if any(
-                entry.data.get(CONF_PROVIDER, DEFAULT_PROVIDER) == PROVIDER_IGNITIS
-                for entry in target_entries
-            ):
-                raise ServiceValidationError(
-                    "Backfill (date_from/date_to) is not supported for Ignitis accounts"
-                )
             kwargs = {
                 "date_from": datetime.combine(
                     date_from, datetime.min.time(), tzinfo=dt_util.DEFAULT_TIME_ZONE
@@ -422,7 +424,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 if date_to
                 else None,
             }
-        _LOGGER.info("ESO: on-demand import requested for %d account(s)", len(targets))
+        _LOGGER.info("On-demand import requested for %d account(s)", len(targets))
         for callback in targets:
             await callback(dt_util.now(), **kwargs)
 
@@ -466,7 +468,7 @@ async def async_insert_statistics(
             _LOGGER.error("Received empty generation data for %s", statistic_id)
             continue
         generation_data = dataset[mapped_consumption_type]
-        _LOGGER.debug("Received ESO data for %s: %s", statistic_id, generation_data)
+        _LOGGER.debug("Received data for %s: %s", statistic_id, generation_data)
         metadata = StatisticMetaData(
             has_sum=True,
             mean_type=StatisticMeanType.NONE,
