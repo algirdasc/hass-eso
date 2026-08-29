@@ -190,7 +190,7 @@
         "all_configured": "All discovered objects are already configured.",
         "reconfigure_successful": "Object settings were updated successfully.",
         "cannot_connect": "Failed to connect to your energy provider. Please try again.",
-        "invalid_auth": "The stored credentials were rejected. Update the account password under Configure and try again.",
+        "invalid_auth": "The stored credentials were rejected. Under Configure, update the account password or, for Ignitis, try the other login method.",
         "twofa_failed": "Could not complete two-factor login. Check the account's mailbox (IMAP) settings.",
         "unknown": "Unexpected error. Check the logs for details."
       }
