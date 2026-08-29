@@ -338,7 +338,7 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_AUTH_TYPE, default=self._auth_type
                 ): _auth_type_selector(),
-                vol.Required(CONF_PASSWORD, default=self._password): str,
+                vol.Required(CONF_PASSWORD): str,
             }
         )
 
