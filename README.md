@@ -54,15 +54,30 @@ Legacy YAML configuration is **deprecated**; any existing `eso:` block is automa
 3. **Step 1 – Account:** choose your **data provider** (ESO or Ignitis) and enter your credentials.
    - **ESO:** your [mano.eso.lt](https://mano.eso.lt/) username and password.
    - **Ignitis:** your **Ignitis "Energy Smart"** app email and password.
-4. **Step 2 – Two-factor authentication (email):** *ESO only.* ESO emails a one-time code on every login, so a mailbox is **required**. Enter the mailbox that receives those codes so Home Assistant can read them automatically (see *Two-factor authentication* below). Ignitis skips this step.
-5. **Step 3 – Select objects:** the integration logs in and **auto-discovers your objects**.
+4. **Step 2 – Ignitis login method:** *Ignitis only.* Choose how Home Assistant signs in (see *Ignitis login methods* below), and confirm your password. ESO skips this step.
+5. **Step 2 – Two-factor authentication (email):** *ESO only.* ESO emails a one-time code on every login, so a mailbox is **required**. Enter the mailbox that receives those codes so Home Assistant can read them automatically (see *Two-factor authentication* below). Ignitis skips this step.
+6. **Step 3 – Select objects:** the integration logs in and **auto-discovers your objects**.
 
 After setup, the account appears under **Settings → Devices & Services** with each object listed beneath it:
 
 - **Add object** – discovers your objects and adds one as a new entry.
 - **Reconfigure** (per object) – set that object's name, consumed/returned tracking, and cost/balance options — directly on the object, no nested menus.
-- **Configure** (on the account) – update the account password (and, for ESO, the mailbox/2FA settings).
+- **Configure** (on the account) – update the account password (for ESO, the mailbox/2FA settings; for Ignitis, the login method).
 - **Delete** (per object) – stop tracking that object.
+
+#### Ignitis login methods
+
+Ignitis accounts can sign in two ways. Both end up with the same API token, so the data and the
+sensors are identical — only the way the token is obtained differs.
+
+| Method | What it does |
+| ------ | ------------ |
+| **Direct** (default) | Posts your email and password straight to the Energy Smart API. One request. |
+| **Self sign portal** | Reproduces the mobile app's flow: mints a login ticket, signs in through `e.ignitis.lt`, then trades the ticket for an API token. Four requests. |
+
+Start with **Direct**. If it reports invalid credentials even though they are correct, switch to
+**Self sign portal** — some accounts are only accepted through the web login. You can change the method
+later under **Configure** on the account.
 
 #### Migrating from YAML
 

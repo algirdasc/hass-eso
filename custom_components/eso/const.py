@@ -22,6 +22,14 @@ PROVIDER_IGNITIS = "ignitis"
 PROVIDERS = [PROVIDER_ESO, PROVIDER_IGNITIS]
 DEFAULT_PROVIDER = PROVIDER_ESO
 
+# How the Ignitis client authenticates: "direct" posts to the Energy Smart API,
+# "sso" goes through the e.ignitis.lt web login like the mobile app does.
+CONF_AUTH_TYPE = "auth_type"
+AUTH_TYPE_DIRECT = "direct"
+AUTH_TYPE_SSO = "sso"
+AUTH_TYPES = [AUTH_TYPE_DIRECT, AUTH_TYPE_SSO]
+DEFAULT_AUTH_TYPE = AUTH_TYPE_DIRECT
+
 # IMAP (two-factor) configuration
 CONF_IMAP = "imap"
 CONF_IMAP_HOST = "host"

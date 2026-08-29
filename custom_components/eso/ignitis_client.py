@@ -1,11 +1,15 @@
 import logging
+import re
 import time
+import uuid
 from collections import Counter
 from datetime import date, datetime, timedelta
 
 import requests
 
 from .const import (
+    AUTH_TYPE_SSO,
+    DEFAULT_AUTH_TYPE,
     EXPORT_BALANCE_KEY,
     IGNITIS_RANGE_CHUNK_DAYS,
     POWER_CONSUMED,
@@ -15,6 +19,16 @@ from .eso_client import ESOAuthError, ESOConnectionError
 
 LOGIN_URL = "https://energy-smart-api.ignitis.lt/api/users/login"
 GENERATION_URL = "https://energy-smart-api.ignitis.lt/api/v2/objects/usage/{object}/day"
+
+WEB_BASE = "https://e.ignitis.lt"
+SSO_LOGIN_PAGE = f"{WEB_BASE}/sutartis/energySmart/prisijungti"
+SSO_CALLBACK = "https://energy-smart-api.ignitis.lt/users/auth"
+SSO_EXTERNAL_LOGIN = "https://energy-smart-api.ignitis.lt/api/users/external/login"
+SSO_SESSION_COOKIE = ".AspNet.ApplicationCookie"
+# The form action arrives as an unevaluated `{{...}}` template (client-rendered
+# page), so it has to be reassembled around this id.
+SSO_TEMP_USER_DATAS_RE = re.compile(r"tempUserDatasId=([0-9a-fA-F-]{36})")
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -23,11 +37,11 @@ class IgnitisClient:
         self,
         username: str,
         password: str,
-        imap_config: dict | None = None,
-        session_file: str | None = None,
+        auth_type: str = DEFAULT_AUTH_TYPE,
     ):
         self.username: str = username
         self.password: str = password
+        self.auth_type: str = auth_type
         self.dataset: dict = {}
         self.session: requests.Session = requests.Session()
         self.token: str | None = None
@@ -35,27 +49,10 @@ class IgnitisClient:
 
     def login(self) -> None:
         self.dataset = {}
-        try:
-            headers = {
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            }
-            response = self.session.post(
-                LOGIN_URL,
-                data={
-                    "email": self.username,
-                    "password": self.password,
-                },
-                headers=headers,
-            )
-            response.raise_for_status()
-            _LOGGER.debug("Ignitis login response status: %s", response.status_code)
-        except requests.exceptions.RequestException as e:
-            _LOGGER.error("Ignitis login error: %s", e)
-            raise ESOConnectionError(str(e)) from e
-        try:
-            login_response = response.json()
-        except ValueError as e:
-            raise ESOConnectionError(f"Invalid Ignitis login response: {e}") from e
+        if self.auth_type == AUTH_TYPE_SSO:
+            login_response = self._login_sso()
+        else:
+            login_response = self._login_direct()
         token = login_response.get("token")
         if not token:
             raise ESOAuthError("Ignitis login did not return a token")
@@ -70,20 +67,131 @@ class IgnitisClient:
                 {"id": str(uoid), "name": obj.get("address") or str(uoid)}
             )
 
-    # ---- config-flow helpers ----------------------------------------------
-
-    def check_password(self) -> bool:
+    def _post_direct_login(self) -> requests.Response:
         try:
-            response = self.session.post(
+            return self.session.post(
                 LOGIN_URL,
-                data={"email": self.username, "password": self.password},
+                data={
+                    "email": self.username,
+                    "password": self.password,
+                },
                 headers={
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                 },
             )
         except requests.exceptions.RequestException as e:
+            _LOGGER.error("Ignitis login error: %s", e)
             raise ESOConnectionError(str(e)) from e
+
+    @staticmethod
+    def _direct_credentials_rejected(response: requests.Response) -> bool:
+        """Bad credentials come back as 400, not 401, with a per-field error
+        object; a malformed request is a 400 whose `error` is a plain string."""
         if response.status_code in (401, 403):
+            return True
+        if response.status_code != 400:
+            return False
+        try:
+            body = response.json()
+        except ValueError:
+            return False
+        return isinstance(body, dict) and isinstance(body.get("error"), dict)
+
+    def _login_direct(self) -> dict:
+        response = self._post_direct_login()
+        if self._direct_credentials_rejected(response):
+            raise ESOAuthError("Ignitis rejected the credentials")
+        try:
+            response.raise_for_status()
+            _LOGGER.debug("Ignitis login response status: %s", response.status_code)
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error("Ignitis login error: %s", e)
+            raise ESOConnectionError(str(e)) from e
+        try:
+            return response.json()
+        except ValueError as e:
+            raise ESOConnectionError(f"Invalid Ignitis login response: {e}") from e
+
+    def _login_sso(self) -> dict:
+        """Mint a ticket, let the e.ignitis.lt web login bind it, trade it for an
+        API token. One session throughout: the web cookie is SameSite=None and
+        has to survive the cross-host hops.
+        """
+        ticket = str(uuid.uuid4()).upper()
+        callback = f"{SSO_CALLBACK}?ticket={ticket}"
+        # A stale cookie would authenticate the previous ticket, leaving this
+        # one silently unbound.
+        self.session = requests.Session()
+        try:
+            page = self.session.get(
+                SSO_LOGIN_PAGE,
+                params={"token": ticket, "callBackURL": callback},
+            )
+            page.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error("Ignitis SSO login page error: %s", e)
+            raise ESOConnectionError(str(e)) from e
+
+        match = SSO_TEMP_USER_DATAS_RE.search(page.text)
+        if not match:
+            raise ESOConnectionError(
+                "Ignitis SSO login page has no tempUserDatasId; the login page "
+                "layout has probably changed"
+            )
+        # returnUrl must stay un-encoded; the endpoint rejects the encoded form.
+        post_url = (
+            f"{WEB_BASE}/prisijungti?returnUrl={callback}"
+            "&newContract=true&contractRequestType="
+            f"&tempUserDatasId={match.group(1)}"
+            "&energySmart=true"
+        )
+
+        try:
+            auth = self.session.post(
+                post_url,
+                data={"Email": self.username, "Password": self.password},
+            )
+            auth.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error("Ignitis SSO credential post error: %s", e)
+            raise ESOConnectionError(str(e)) from e
+
+        # Bad credentials re-render the form with a 200 instead of redirecting,
+        # so the cookie is the only success signal.
+        if SSO_SESSION_COOKIE not in self.session.cookies:
+            raise ESOAuthError("Ignitis rejected the credentials on the web login")
+        if not any("/users/auth" in hop.url for hop in [*auth.history, auth]):
+            raise ESOAuthError(
+                "Ignitis SSO login never reached the ticket callback; the "
+                "ticket is unbound"
+            )
+
+        try:
+            response = self.session.post(
+                SSO_EXTERNAL_LOGIN,
+                params={"provider": "IGNITIS", "ticket": ticket},
+            )
+            if response.status_code in (401, 403):
+                raise ESOAuthError("Ignitis refused to exchange the SSO ticket")
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error("Ignitis SSO ticket exchange error: %s", e)
+            raise ESOConnectionError(str(e)) from e
+        try:
+            return response.json()
+        except ValueError as e:
+            raise ESOConnectionError(f"Invalid Ignitis login response: {e}") from e
+
+    # ---- config-flow helpers ----------------------------------------------
+
+    def check_password(self) -> bool:
+        if self.auth_type == AUTH_TYPE_SSO:
+            try:
+                return bool(self._login_sso().get("token"))
+            except ESOAuthError:
+                return False
+        response = self._post_direct_login()
+        if self._direct_credentials_rejected(response):
             return False
         try:
             response.raise_for_status()
@@ -209,9 +317,8 @@ class IgnitisClient:
                 "; ".join(gaps),
             )
         for consumption_type in (POWER_CONSUMED, POWER_RETURNED):
-            self.dataset[obj][consumption_type] = dict(
-                sorted(self.dataset[obj][consumption_type].items())
-            )
+            series: dict[float, float] = self.dataset[obj][consumption_type]
+            self.dataset[obj][consumption_type] = dict(sorted(series.items()))
         return self.dataset[obj]
 
     @staticmethod

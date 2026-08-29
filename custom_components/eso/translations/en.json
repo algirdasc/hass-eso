@@ -15,9 +15,21 @@
           "password": "Your account password. It is verified before continuing."
         }
       },
+      "ignitis_auth": {
+        "title": "Ignitis login method",
+        "description": "Choose how Home Assistant signs in to the Ignitis account {username}. Try \"Direct\" first. If it reports invalid credentials even though they are correct, switch to \"Self sign portal\", which reproduces the login the mobile app performs.",
+        "data": {
+          "auth_type": "Login method",
+          "password": "Password"
+        },
+        "data_description": {
+          "auth_type": "Direct posts your credentials to the Energy Smart API. Self sign portal goes through e.ignitis.lt like the mobile app does.",
+          "password": "Your Ignitis account password. It is verified with the selected login method before continuing."
+        }
+      },
       "imap": {
         "title": "Two-factor authentication (email)",
-        "description": "ESO emails a one-time code on every login, so a mailbox is required. Enter the mailbox that receives those codes so Home Assistant can read them automatically. For Gmail you must create an App Password (https://support.google.com/accounts/answer/185833) \u2014 your normal password will not work.",
+        "description": "ESO emails a one-time code on every login, so a mailbox is required. Enter the mailbox that receives those codes so Home Assistant can read them automatically. For Gmail you must create an App Password (https://support.google.com/accounts/answer/185833) — your normal password will not work.",
         "data": {
           "imap_username": "Mailbox username",
           "imap_password": "Mailbox password",
@@ -86,6 +98,7 @@
         "description": "Update the account password for {username}. ESO accounts can also update their mailbox (2FA) settings here. To use a different account, add a new integration entry instead.",
         "data": {
           "password": "Password",
+          "auth_type": "Login method",
           "imap_username": "Mailbox username",
           "imap_password": "Mailbox password",
           "host": "IMAP server host",
@@ -95,6 +108,7 @@
         },
         "data_description": {
           "password": "Your provider account password.",
+          "auth_type": "Ignitis only. Direct posts your credentials to the Energy Smart API; self sign portal goes through e.ignitis.lt like the mobile app does.",
           "imap_username": "The mailbox login that receives ESO 2FA codes.",
           "imap_password": "Mailbox password. For Gmail/Google use an App Password.",
           "host": "IMAP host, e.g. imap.gmail.com.",
@@ -176,6 +190,7 @@
         "all_configured": "All discovered objects are already configured.",
         "reconfigure_successful": "Object settings were updated successfully.",
         "cannot_connect": "Failed to connect to your energy provider. Please try again.",
+        "invalid_auth": "The stored credentials were rejected. Update the account password under Configure and try again.",
         "twofa_failed": "Could not complete two-factor login. Check the account's mailbox (IMAP) settings.",
         "unknown": "Unexpected error. Check the logs for details."
       }
@@ -208,7 +223,7 @@
         "step": {
           "confirm": {
             "title": "Remove the ESO YAML configuration",
-            "description": "Configuring ESO via configuration.yaml is deprecated. Your existing configuration has been imported and the integration is now available under Settings \u2192 Devices & Services.\n\nRemove the `eso:` block from configuration.yaml and restart Home Assistant, then submit to dismiss this issue."
+            "description": "Configuring ESO via configuration.yaml is deprecated. Your existing configuration has been imported and the integration is now available under Settings → Devices & Services.\n\nRemove the `eso:` block from configuration.yaml and restart Home Assistant, then submit to dismiss this issue."
           }
         }
       }
@@ -219,6 +234,12 @@
       "options": {
         "eso": "ESO",
         "ignitis": "Ignitis"
+      }
+    },
+    "auth_type": {
+      "options": {
+        "direct": "Direct (Energy Smart API)",
+        "sso": "Self sign portal"
       }
     }
   }
