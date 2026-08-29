@@ -95,7 +95,7 @@
     "step": {
       "init": {
         "title": "Update credentials",
-        "description": "Update the account password for {username}. ESO accounts can also update their mailbox (2FA) settings here. To use a different account, add a new integration entry instead.",
+        "description": "Update the account password for {username}. ESO accounts can also update their mailbox (2FA) settings here; Ignitis accounts can switch the login method. To use a different account, add a new integration entry instead.",
         "data": {
           "password": "Password",
           "auth_type": "Login method",

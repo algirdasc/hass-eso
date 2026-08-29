@@ -301,7 +301,8 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
         """Pick the Ignitis login method, then verify the credentials.
 
         Validity depends on the (credentials, method) pair, so errors land here
-        and the method can be switched without re-entering anything.
+        rather than on the account step. Only the method selection is carried
+        over on a retry; the password has to be entered again each time.
         """
         errors: dict[str, str] = {}
         if user_input is not None:
