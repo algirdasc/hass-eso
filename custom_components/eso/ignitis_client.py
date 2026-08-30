@@ -119,9 +119,7 @@ class IgnitisClient:
         """
         ticket = str(uuid.uuid4()).upper()
         callback = f"{SSO_CALLBACK}?ticket={ticket}"
-        # A stale cookie would authenticate the previous ticket, leaving this
-        # one silently unbound.
-        self.session = requests.Session()
+        self.session.cookies.clear()
         try:
             page = self.session.get(
                 SSO_LOGIN_PAGE,
