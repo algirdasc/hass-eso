@@ -22,6 +22,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import selector
 
 from .const import (
+    AUTH_TYPES,
+    CONF_AUTH_TYPE,
     CONF_CONSUMED,
     CONF_EXPORT_BALANCE,
     CONF_FIXED_PRICE,
@@ -35,6 +37,7 @@ from .const import (
     CONF_PRICE_ENTITY,
     CONF_PROVIDER,
     CONF_RETURNED,
+    DEFAULT_AUTH_TYPE,
     DEFAULT_IMAP_FOLDER,
     DEFAULT_IMAP_HOST,
     DEFAULT_IMAP_PORT,
@@ -133,12 +136,30 @@ def _provider_selector() -> selector.SelectSelector:
     )
 
 
+def _auth_type_selector() -> selector.SelectSelector:
+    """A translatable dropdown of the Ignitis login methods."""
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=AUTH_TYPES,
+            translation_key=CONF_AUTH_TYPE,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
 def _make_client(
-    hass, provider: str, username: str, password: str, imap: dict | None = None
+    hass,
+    provider: str,
+    username: str,
+    password: str,
+    imap: dict | None = None,
+    auth_type: str = DEFAULT_AUTH_TYPE,
 ) -> ESOClient | IgnitisClient:
     """Build the data-provider client for validation and object discovery."""
     if provider == PROVIDER_IGNITIS:
-        return IgnitisClient(username=username, password=password)
+        return IgnitisClient(
+            username=username, password=password, auth_type=auth_type
+        )
     return ESOClient(
         username=username,
         password=password,
@@ -227,6 +248,7 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
         self._provider: str = DEFAULT_PROVIDER
         self._username: str | None = None
         self._password: str | None = None
+        self._auth_type: str = DEFAULT_AUTH_TYPE
         self._imap: dict | None = None
         self._discovered: list[dict] = []
         self._reauth_entry: ConfigEntry | None = None
@@ -245,6 +267,9 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 _unique_id(self._provider, self._username)
             )
             self._abort_if_unique_id_configured()
+            # Credentials can only be checked once the login method is known.
+            if self._provider == PROVIDER_IGNITIS:
+                return await self.async_step_ignitis_auth()
             client = _make_client(
                 self.hass, self._provider, self._username, self._password
             )
@@ -256,8 +281,6 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 if valid:
-                    if self._provider == PROVIDER_IGNITIS:
-                        return await self.async_step_objects()
                     return await self.async_step_imap()
                 errors["base"] = "invalid_auth"
 
@@ -269,6 +292,56 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    # ---- step 1b: Ignitis login method -------------------------------------
+
+    async def async_step_ignitis_auth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the Ignitis login method, then verify the credentials.
+
+        Validity depends on the (credentials, method) pair, so errors land here
+        rather than on the account step. Only the method selection is carried
+        over on a retry; the password has to be entered again each time.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._auth_type = user_input[CONF_AUTH_TYPE]
+            self._password = user_input[CONF_PASSWORD]
+            client = _make_client(
+                self.hass,
+                self._provider,
+                self._username,
+                self._password,
+                auth_type=self._auth_type,
+            )
+            try:
+                valid = await self.hass.async_add_executor_job(client.check_password)
+            except ESOConnectionError:
+                errors["base"] = "cannot_connect"
+            except ESOError:
+                errors["base"] = "unknown"
+            else:
+                if valid:
+                    return await self.async_step_objects()
+                errors["base"] = "invalid_auth"
+
+        return self.async_show_form(
+            step_id="ignitis_auth",
+            data_schema=self._ignitis_auth_schema(),
+            errors=errors,
+            description_placeholders={"username": self._username},
+        )
+
+    def _ignitis_auth_schema(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_AUTH_TYPE, default=self._auth_type
+                ): _auth_type_selector(),
+                vol.Required(CONF_PASSWORD): str,
+            }
+        )
 
     # ---- step 2: IMAP / two-factor ----------------------------------------
 
@@ -301,6 +374,7 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._username,
                 self._password,
                 self._imap,
+                auth_type=self._auth_type,
             )
             try:
                 self._discovered = await self.hass.async_add_executor_job(
@@ -309,22 +383,22 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
             except ESOConnectionError:
                 errors["base"] = "cannot_connect"
             except ESOAuthError:
-                errors["base"] = "twofa_failed"
+                # Only ESO has a mailbox step to blame.
+                errors["base"] = (
+                    "twofa_failed"
+                    if self._provider == PROVIDER_ESO
+                    else "invalid_auth"
+                )
             except ESOError:
                 errors["base"] = "unknown"
             if errors:
-                # Let the user revisit the IMAP step and retry.
+                # Back to the step that owns the failing setting.
                 if self._provider == PROVIDER_IGNITIS:
                     return self.async_show_form(
-                        step_id="user",
-                        data_schema=vol.Schema(
-                            {
-                                vol.Required(CONF_PROVIDER, default=self._provider): _provider_selector(),
-                                vol.Required(CONF_USERNAME, default=self._username): str,
-                                vol.Required(CONF_PASSWORD): str,
-                            }
-                        ),
+                        step_id="ignitis_auth",
+                        data_schema=self._ignitis_auth_schema(),
                         errors=errors,
+                        description_placeholders={"username": self._username},
                     )
                 return self.async_show_form(
                     step_id="imap", data_schema=_imap_schema(), errors=errors
@@ -359,6 +433,8 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
                 if self._provider == PROVIDER_ESO:
                     data[CONF_IMAP] = self._imap
+                else:
+                    data[CONF_AUTH_TYPE] = self._auth_type
                 return self.async_create_entry(
                     title=self._username, data=data, subentries=subentries
                 )
@@ -387,6 +463,9 @@ class ESOConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_USERNAME: username,
             CONF_PASSWORD: import_data[CONF_PASSWORD],
         }
+        if provider == PROVIDER_IGNITIS:
+            data[CONF_AUTH_TYPE] = import_data.get(CONF_AUTH_TYPE, DEFAULT_AUTH_TYPE)
+
         imap = import_data.get(CONF_IMAP)
         if imap and provider == PROVIDER_ESO:
             data[CONF_IMAP] = {
@@ -514,13 +593,19 @@ class ESOOptionsFlow(OptionsFlow):
         imap = data.get(CONF_IMAP) or {}
         is_eso = provider == PROVIDER_ESO
 
+        auth_type = data.get(CONF_AUTH_TYPE, DEFAULT_AUTH_TYPE)
+
         if user_input is not None:
             username = data[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
+            if not is_eso:
+                auth_type = user_input[CONF_AUTH_TYPE]
             if is_eso and (not user_input.get(CONF_IMAP_USERNAME) or not user_input.get(CONF_IMAP_PASSWORD)):
                 errors["base"] = "imap_required"
             else:
-                client = _make_client(self.hass, provider, username, password)
+                client = _make_client(
+                    self.hass, provider, username, password, auth_type=auth_type
+                )
                 try:
                     valid = await self.hass.async_add_executor_job(
                         client.check_password
@@ -540,6 +625,8 @@ class ESOOptionsFlow(OptionsFlow):
                 }
                 if is_eso:
                     new_data[CONF_IMAP] = _build_imap_config(user_input)
+                else:
+                    new_data[CONF_AUTH_TYPE] = auth_type
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data=new_data
                 )
@@ -548,7 +635,15 @@ class ESOOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {vol.Required(CONF_PASSWORD, default=data.get(CONF_PASSWORD)): str}
         )
-        if is_eso:
+        if not is_eso:
+            schema = schema.extend(
+                {
+                    vol.Required(
+                        CONF_AUTH_TYPE, default=auth_type
+                    ): _auth_type_selector()
+                }
+            )
+        else:
             schema = schema.extend(
                 _imap_schema(
                     {
@@ -585,12 +680,14 @@ class ESOObjectSubentryFlow(ConfigSubentryFlow):
         entry = self._get_entry()
 
         if not self._discovered:
+            provider = entry.data.get(CONF_PROVIDER, DEFAULT_PROVIDER)
             client = _make_client(
                 self.hass,
-                entry.data.get(CONF_PROVIDER, DEFAULT_PROVIDER),
+                provider,
                 entry.data[CONF_USERNAME],
                 entry.data[CONF_PASSWORD],
                 entry.data.get(CONF_IMAP),
+                auth_type=entry.data.get(CONF_AUTH_TYPE, DEFAULT_AUTH_TYPE),
             )
             try:
                 self._discovered = await self.hass.async_add_executor_job(
@@ -599,7 +696,12 @@ class ESOObjectSubentryFlow(ConfigSubentryFlow):
             except ESOConnectionError:
                 return self.async_abort(reason="cannot_connect")
             except ESOAuthError:
-                return self.async_abort(reason="twofa_failed")
+                # Only ESO has a mailbox step to blame.
+                return self.async_abort(
+                    reason="twofa_failed"
+                    if provider == PROVIDER_ESO
+                    else "invalid_auth"
+                )
             except ESOError:
                 return self.async_abort(reason="unknown")
 

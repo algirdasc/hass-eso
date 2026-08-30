@@ -36,6 +36,8 @@ from .const import (
     ATTR_CONFIG_ENTRY_ID,
     ATTR_DATE_FROM,
     ATTR_DATE_TO,
+    AUTH_TYPES,
+    CONF_AUTH_TYPE,
     CONF_CONSUMED,
     CONF_COST,
     CONF_EXPORT_BALANCE,
@@ -53,6 +55,7 @@ from .const import (
     DAILY_IMPORT_WINDOW_SECONDS,
     DAILY_IMPORT_WINDOW_START_HOUR,
     DAILY_IMPORT_WINDOW_START_MINUTE,
+    DEFAULT_AUTH_TYPE,
     DEFAULT_IMAP_FOLDER,
     DEFAULT_IMAP_HOST,
     DEFAULT_IMAP_PORT,
@@ -125,6 +128,9 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Required(CONF_USERNAME): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
                 vol.Optional(CONF_PROVIDER, default=DEFAULT_PROVIDER): vol.In(PROVIDERS),
+                vol.Optional(CONF_AUTH_TYPE, default=DEFAULT_AUTH_TYPE): vol.In(
+                    AUTH_TYPES
+                ),
                 vol.Required(CONF_OBJECTS): cv.ensure_list(OBJECT_SCHEMA),
                 vol.Optional(CONF_IMAP): IMAP_SCHEMA,
             }
@@ -223,6 +229,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
         client: ESOClient | IgnitisClient = IgnitisClient(
             username=entry.data[CONF_USERNAME],
             password=entry.data[CONF_PASSWORD],
+            auth_type=entry.data.get(CONF_AUTH_TYPE, DEFAULT_AUTH_TYPE),
         )
     else:
         if not entry.data.get(CONF_IMAP):
