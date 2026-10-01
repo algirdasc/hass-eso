@@ -74,6 +74,10 @@ IGNITIS_IMPORT_HOUR = 10
 IGNITIS_IMPORT_MINUTE = 30
 IGNITIS_RETRY_DELAY_SECONDS = 10 * 60
 IGNITIS_MAX_RETRIES = 10
+# Days that never came back whole are queued and retried by each following
+# daily run, until this age cap abandons them.
+IGNITIS_MAX_PENDING_DAYS = 30
+PENDING_DAYS_STORAGE_VERSION = 1
 # Ignitis serves at most 8 days per request and silently truncates a wider
 # window to the most recent days, so backfills are split into weekly requests.
 IGNITIS_RANGE_CHUNK_DAYS = 7

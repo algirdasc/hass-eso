@@ -29,6 +29,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ServiceValidationErr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_point_in_time
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -67,8 +68,10 @@ from .const import (
     EXPORT_BALANCE_KEY,
     IGNITIS_IMPORT_HOUR,
     IGNITIS_IMPORT_MINUTE,
+    IGNITIS_MAX_PENDING_DAYS,
     IGNITIS_MAX_RETRIES,
     IGNITIS_RETRY_DELAY_SECONDS,
+    PENDING_DAYS_STORAGE_VERSION,
     PROVIDER_IGNITIS,
     PROVIDERS,
     RETRY_DELAY_SECONDS,
@@ -175,7 +178,7 @@ def _expected_hourly_points(day: date) -> int:
     tz = dt_util.get_time_zone(TIMEZONE)
     start = datetime(day.year, day.month, day.day, tzinfo=tz)
     nxt = start + timedelta(days=1)
-    return round((nxt.timestamp() - start.timestamp()) / 3600)
+    return min(round((nxt.timestamp() - start.timestamp()) / 3600), 24)
 
 
 def _need_retry(dataset: dict | None, target_day: date) -> bool:
@@ -262,11 +265,56 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
     )
     max_retries = IGNITIS_MAX_RETRIES if provider == PROVIDER_IGNITIS else 1
 
+    pending_store: Store[dict] = Store(
+        hass, PENDING_DAYS_STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.pending_days"
+    )
+    pending_days: set[date] = set()
+
+    async def _load_pending_days() -> None:
+        stored = await pending_store.async_load() or {}
+        for raw in stored.get("days", []):
+            try:
+                pending_days.add(date.fromisoformat(raw))
+            except (TypeError, ValueError):
+                _LOGGER.warning("Discarding malformed pending day %r", raw)
+        if pending_days:
+            _LOGGER.info(
+                "Days still waiting for a complete import: %s",
+                ", ".join(str(day) for day in sorted(pending_days)),
+            )
+
+    async def _save_pending_days() -> None:
+        await pending_store.async_save(
+            {"days": [day.isoformat() for day in sorted(pending_days)]}
+        )
+
+    def _day_complete(day: date) -> bool:
+        """Whether every object holds a full set of hours for `day`.
+
+        Matches timestamps against `day` rather than counting them like
+        `_need_retry`: a login failure leaves the previous fetch in place, and
+        24 hours of some other day must not pass for the one being chased.
+        """
+        expected = _expected_hourly_points(day)
+        for obj in _entry_objects(entry):
+            dataset = client.get_dataset(obj[CONF_ID])
+            if not dataset:
+                return False
+            for data_type in (CONF_CONSUMED, CONF_RETURNED):
+                series = dataset.get(ENERGY_TYPE_MAP[data_type], {})
+                hours = sum(
+                    1 for ts in series if datetime.fromtimestamp(ts).date() == day
+                )
+                if hours < expected:
+                    return False
+        return True
+
     async def async_import_generation(
         now: datetime,
         retry: int = 0,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
+        require_day: date | None = None,
     ) -> None:
         if hass.is_stopping:
             _LOGGER.debug("HA is stopping, skipping generation import")
@@ -274,6 +322,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
         objects = _entry_objects(entry)
         all_failed = False
         auth_failed = False
+        target_day = (now - timedelta(days=1)).date()
+        check_day = target_day if date_from is None else require_day
         try:
             _LOGGER.info("Logging in to %s...", provider.upper())
             await hass.async_add_executor_job(client.login)
@@ -304,15 +354,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
                 all_failed = True
                 continue
             dataset = client.get_dataset(obj[CONF_ID])
-            target_day = (now - timedelta(days=1)).date()
-            # Only the daily run can be incomplete because yesterday's data is
-            # not published yet; a backfill spans days that are already closed.
             if (
                 provider == PROVIDER_IGNITIS
-                and date_from is None
-                and _need_retry(dataset, target_day)
+                and check_day is not None
+                and _need_retry(dataset, check_day)
             ):
-                _LOGGER.warning("Received incomplete data for %s, will retry later", obj[CONF_NAME])
+                _LOGGER.warning("Received incomplete data for %s (%s), will retry later", obj[CONF_NAME], check_day)
                 all_failed = True
                 continue
             await async_insert_statistics(hass, obj, dataset)
@@ -353,10 +400,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
                 await async_import_generation(now, retry=retry + 1)
 
             entry.async_on_unload(async_call_later(hass, retry_delay, _retry))
+        elif all_failed and date_from is None and provider == PROVIDER_IGNITIS:
+            _LOGGER.error(
+                "Still no complete data for %s after %d attempts, queued for the next daily sync",
+                target_day,
+                max_retries + 1,
+            )
+            pending_days.add(target_day)
+            await _save_pending_days()
         elif all_failed and date_from is None:
             _LOGGER.error("Fetch failed, postponing fetch for next day")
         elif all_failed:
             _LOGGER.error("Backfill import failed")
+
+    async def async_import_pending_days(now: datetime) -> None:
+        """Re-import queued days, oldest first, before the fresh day is fetched.
+
+        `_async_get_statistics` anchors a day's cumulative sum to the last
+        point written before it, so importing out of order would step the sum
+        backwards at the junction.
+        """
+        if not pending_days:
+            return
+        cutoff = (now - timedelta(days=IGNITIS_MAX_PENDING_DAYS)).date()
+        if abandoned := {day for day in pending_days if day < cutoff}:
+            _LOGGER.error(
+                "Giving up on %s: still unavailable after %d days. Use the "
+                "import_now service with a date range to retry by hand",
+                ", ".join(str(day) for day in sorted(abandoned)),
+                IGNITIS_MAX_PENDING_DAYS,
+            )
+            pending_days.difference_update(abandoned)
+        target_day = (now - timedelta(days=1)).date()
+        recovered: set[date] = set()
+        for day in sorted(day for day in pending_days if day < target_day):
+            _LOGGER.info("Re-importing pending day %s", day)
+            day_start = datetime.combine(
+                day, datetime.min.time(), tzinfo=dt_util.DEFAULT_TIME_ZONE
+            )
+            await async_import_generation(
+                now, date_from=day_start, date_to=day_start, require_day=day
+            )
+            if _day_complete(day):
+                _LOGGER.info("Pending day %s recovered", day)
+                recovered.add(day)
+            else:
+                _LOGGER.warning(
+                    "Pending day %s is still incomplete, will retry tomorrow", day
+                )
+        pending_days.difference_update(recovered)
+        if recovered or abandoned:
+            await _save_pending_days()
 
     daily_import_cancel = None
 
@@ -375,10 +469,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool:
     async def async_run_scheduled_import(now: datetime) -> None:
         nonlocal daily_import_cancel
         daily_import_cancel = None
+        await async_import_pending_days(now)
         await async_import_generation(now)
         if not hass.is_stopping:
             schedule_daily_import(now)
 
+    await _load_pending_days()
     schedule_daily_import(dt_util.now())
     entry.async_on_unload(lambda: daily_import_cancel and daily_import_cancel())
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -455,6 +551,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> bool
     if not remaining and hass.services.has_service(DOMAIN, SERVICE_IMPORT_NOW):
         hass.services.async_remove(DOMAIN, SERVICE_IMPORT_NOW)
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> None:
+    """Drop the pending-days queue along with the account it belonged to."""
+    await Store(
+        hass, PENDING_DAYS_STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.pending_days"
+    ).async_remove()
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ESOConfigEntry) -> None:
